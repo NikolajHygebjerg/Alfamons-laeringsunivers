@@ -270,6 +270,12 @@ class _KidTodayScreenState extends State<KidTodayScreen> {
                   onTap: () => context.go('/kid/spil/${widget.kidId}'),
                 ),
                 _NavItem(
+                  icon: Icons.bug_report,
+                  label: 'Test',
+                  selected: false,
+                  onTap: () => context.go('/kid/test/${widget.kidId}'),
+                ),
+                _NavItem(
                   icon: Icons.emoji_events,
                   label: 'Præstationer',
                   selected: false,
@@ -382,43 +388,44 @@ class _TaskCard extends StatelessWidget {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             child: Padding(
               padding: const EdgeInsets.all(8),
-              child: Column(
-                mainAxisSize: MainAxisSize.max,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  // Titel – fast højde, overflow sikres
-                  SizedBox(
-                    height: 36,
-                    width: double.infinity,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        ti.task.title,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Titel – fast højde, overflow sikres
+                    SizedBox(
+                      height: 32,
+                      width: double.infinity,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          ti.task.title,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        maxLines: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    // Point
+                    SizedBox(
+                      height: 14,
+                      child: Text(
+                        '⭐ $points ${isCounter ? 'pkt' : 'point'}',
+                        style: const TextStyle(fontSize: 10, color: Colors.black87),
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
-                const SizedBox(height: 2),
-                // Point
-                SizedBox(
-                  height: 16,
-                  child: Text(
-                    '⭐ $points ${isCounter ? 'pkt' : 'point'}',
-                    style: const TextStyle(fontSize: 10, color: Colors.black87),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
                 if (isCounter) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   SizedBox(
-                    height: 36,
+                    height: 32,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -454,10 +461,10 @@ class _TaskCard extends StatelessWidget {
                     ),
                   ),
                 ],
-                const Spacer(),
+                const SizedBox(height: 8),
                 // Knap – fast højde
                 SizedBox(
-                  height: 32,
+                  height: 28,
                   child: ElevatedButton(
                     onPressed: canComplete && !isCompleting ? () => onComplete(GlobalKey()) : null,
                     style: ElevatedButton.styleFrom(
@@ -474,10 +481,11 @@ class _TaskCard extends StatelessWidget {
                           ),
                   ),
                 ),
-              ],
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
         ),
         ),
       );

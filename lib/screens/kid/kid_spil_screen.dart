@@ -100,6 +100,7 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
         .toList();
 
     if (unlockedIds.isEmpty) {
+      if (!mounted) return;
       setState(() {
         _kidCards = [];
         _loading = false;
@@ -111,6 +112,7 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
 
     final shuffled = List<_GameCard>.from(cards)..shuffle(_random);
 
+    if (!mounted) return;
     setState(() {
       _kidCards = shuffled;
       _computerCards = List<_GameCard>.from(shuffled)
@@ -338,6 +340,7 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
           id: 'kid-${DateTime.now().millisecondsSinceEpoch}-${compCard.avatarId}',
           avatarId: compCard.avatarId,
           name: compCard.name,
+          letter: compCard.letter,
           imageUrl: compCard.imageUrl,
           stageIndex: compCard.stageIndex,
           strengths: compCard.strengths,
@@ -351,6 +354,7 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
           id: 'comp-${DateTime.now().millisecondsSinceEpoch}-${kidCard.avatarId}',
           avatarId: kidCard.avatarId,
           name: kidCard.name,
+          letter: kidCard.letter,
           imageUrl: kidCard.imageUrl,
           stageIndex: kidCard.stageIndex,
           strengths: kidCard.strengths,
@@ -856,6 +860,12 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
                   icon: Icons.sports_esports,
                   label: 'Spil',
                   selected: true,
+                ),
+                _NavItem(
+                  icon: Icons.bug_report,
+                  label: 'Test',
+                  selected: false,
+                  onTap: () => context.go('/kid/test/$kidId'),
                 ),
                 _NavItem(
                   icon: Icons.emoji_events,

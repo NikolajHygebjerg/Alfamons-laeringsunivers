@@ -16,6 +16,7 @@ import 'screens/kid/kid_week_screen.dart';
 import 'screens/kid/kid_library_screen.dart';
 import 'screens/kid/kid_achievements_screen.dart';
 import 'screens/kid/kid_spil_screen.dart';
+import 'screens/kid/kid_test_cards_screen.dart';
 import 'services/supabase_service.dart';
 
 void main() async {
@@ -126,6 +127,13 @@ GoRouter _router(AuthProvider authProvider) => GoRouter(
       builder: (context, state) {
         final kidId = state.pathParameters['kidId']!;
         return KidSpilScreen(kidId: kidId);
+      },
+    ),
+    GoRoute(
+      path: '/kid/test/:kidId',
+      builder: (context, state) {
+        final kidId = state.pathParameters['kidId']!;
+        return KidTestCardsScreen(kidId: kidId);
       },
     ),
   ],

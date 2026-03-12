@@ -1,8 +1,10 @@
+import 'dart:developer' as developer;
+
 /// Resolver for lokale kort-SVG'er i assets. Format: {Navn}kort{1-4}.svg
 /// Eksempel: Ifflekort1, Ifflekort2, Atiachkort1, osv.
 /// Bruger både avatar-navn og bogstav (a-å) til lookup.
 class CardAssets {
-  /// Bogstav (a-å) -> asset base. Dansk alfabet: a,b,c,...,z,æ,ø,å
+  /// Bogstav (a-å) -> asset base. Matcher eksakte filnavne (case-sensitive på web/Android).
   static const Map<String, String> _letterToAssetBase = {
     'a': 'Atiachkort',
     'b': 'Bezzlekort',
@@ -11,22 +13,22 @@ class CardAssets {
     'e': 'Ellabookort',
     'f': 'Flizardkort',
     'g': 'Gemibullkort',
-    'h': 'haaghaikort',
+    'h': 'Haaghaikort',
     'i': 'Ifflekort',
     'j': 'Jaadrikkort',
     'k': 'Kåvaxkort',
-    'l': 'lmikort',
+    'l': 'Lmikort',
     'm': 'Maxtorkort',
     'n': 'Nimbrookort',
-    'o': 'oodlobkort',
+    'o': 'Oodlobkort',
     'p': 'Peppapopkort',
     'q': 'Quibblykort',
     'r': 'Rminaxkort',
-    's': 'snakekort',
+    's': 'Snakekort',
     't': 'Tegormkort',
     'u': 'Ummirookort',
     'v': 'Vindlookort',
-    'w': 'wiglookort',
+    'w': 'Wiglookort',
     'x': 'X-bugkort',
     'y': 'Yglifaxkort',
     'z': 'Zetbrakort',
@@ -51,41 +53,41 @@ class CardAssets {
     'f-lizard': 'Flizardkort',
     'gemitsui': 'Gemibullkort',
     'gemitsull': 'Gemibullkort',
-    'hakkul': 'haaghaikort',
-    'haaghai': 'haaghaikort',
+    'hakkul': 'Haaghaikort',
+    'haaghai': 'Haaghaikort',
     'irile': 'Ifflekort',
     'jadrik': 'Jaadrikkort',
     'jaadrik': 'Jaadrikkort',
     'kåvax': 'Kåvaxkort',
     'kavax': 'Kåvaxkort',
-    'l-mii': 'lmikort',
-    'lmi': 'lmikort',
-    'l-titi': 'lmikort',
+    'l-mii': 'Lmikort',
+    'lmi': 'Lmikort',
+    'l-titi': 'Lmikort',
     'master': 'Maxtorkort',
     'm-astar': 'Maxtorkort',
     'maxtor': 'Maxtorkort',
     'nimbroo': 'Nimbrookort',
-    'oglah': 'oodlobkort',
-    'oqlen': 'oodlobkort',
-    'oodlob': 'oodlobkort',
-    'odiab': 'oodlobkort',
+    'oglah': 'Oodlobkort',
+    'oqlen': 'Oodlobkort',
+    'oodlob': 'Oodlobkort',
+    'odiab': 'Oodlobkort',
     'peppapop': 'Peppapopkort',
     'quibbly': 'Quibblykort',
     'quibbty': 'Quibblykort',
     'r-minax': 'Rminaxkort',
     'rminax': 'Rminaxkort',
-    's-nake': 'snakekort',
-    's-nalo': 'snakekort',
-    's-males': 'snakekort',
-    'snake': 'snakekort',
+    's-nake': 'Snakekort',
+    's-nalo': 'Snakekort',
+    's-males': 'Snakekort',
+    'snake': 'Snakekort',
     'tegorm': 'Tegormkort',
     'tagorm': 'Tegormkort',
     'ummiroo': 'Ummirookort',
     'vindleak': 'Vindlookort',
     'windioo': 'Vindlookort',
     'vindloo': 'Vindlookort',
-    'wigloo': 'wiglookort',
-    'wiglook': 'wiglookort',
+    'wigloo': 'Wiglookort',
+    'wiglook': 'Wiglookort',
     'x-bug': 'X-bugkort',
     'yalfax': 'Yglifaxkort',
     'yglifax': 'Yglifaxkort',
@@ -100,31 +102,64 @@ class CardAssets {
     'adonis': 'Bezzlekort',
     'aerios': 'Dedookort',
     'abbas': 'Atiachkort',
+    // Variant-stavninger fra database
+    'x-rub': 'X-bugkort',
+    'vindleek': 'Vindlookort',
+    'ummiboo': 'Ummirookort',
+    'teoborn': 'Tegormkort',
+    'boleon': 'Oegleonkort',
+    'm-axtor': 'Maxtorkort',
+    'ældor': 'Aelgorkort',
   };
 
   /// Overrides for filer med afvigende navne (case, typo)
   static const Map<String, String> _pathOverrides = {
-    'assets/Nimbrookort2.svg': 'assets/Nimbrookort2¨.svg',
     'assets/Aelgorkort3.svg': 'assets/aelgorkort3.svg',
     'assets/Aelgorkort4.svg': 'assets/aelgorkort4.svg',
   };
 
   /// Returnerer asset-path for kort (f.eks. 'assets/Ifflekort1.svg') eller null.
-  /// stageIndex: 1-4 (bruges direkte). Hvis 0, bruges 1.
-  /// letter: valgfri fallback når navn ikke matcher (a-å).
+  /// Navne har stort startbogstav, stage 1-4. Understøtter både 0- og 1-baseret stageIndex.
+  /// letter: bruges først (pålidelig 1:1 mapping A→Atiach, B→Bezzle).
   static String? getCardAssetPath(String avatarName, int stageIndex, {String? letter}) {
-    final stage = stageIndex.clamp(1, 4);
+    // Database kan bruge 0-3 (baby→stærkeste) eller 1-4
+    final stage = (stageIndex >= 1 && stageIndex <= 4)
+        ? stageIndex
+        : (stageIndex + 1).clamp(1, 4);
+
     String? base;
 
-    final nameKey = avatarName.toLowerCase().trim();
-    base = _nameToAssetBase[nameKey];
-
-    if (base == null && letter != null && letter.isNotEmpty) {
+    // 1) Bogstav først – mest pålidelig (A→Atiachkort, B→Bezzlekort)
+    if (letter != null && letter.isNotEmpty) {
       base = _letterToAssetBase[letter.toLowerCase().trim()];
     }
+    // 2) Navn (lowercase) – Atiach→atiach→Atiachkort
+    if (base == null) {
+      final nameKey = avatarName.toLowerCase().trim();
+      base = _nameToAssetBase[nameKey];
+    }
+    // 3) Første bogstav i navn – Bezzle→b→Bezzlekort
+    if (base == null && avatarName.isNotEmpty) {
+      final first = avatarName.toLowerCase().trim()[0];
+      base = _letterToAssetBase[first];
+    }
 
-    if (base == null) return null;
-    final path = 'assets/${base}$stage.svg';
-    return _pathOverrides[path] ?? path;
+    final rawPath = base == null ? null : 'assets/${base}$stage.svg';
+    final path = rawPath == null ? null : (_pathOverrides[rawPath] ?? rawPath);
+    developer.log(
+      'name=$avatarName letter=$letter stageIndex=$stageIndex -> base=$base path=$path',
+      name: 'CardAssets',
+    );
+    return path;
+  }
+
+  /// Returnerer liste af asset-paths at prøve (PNG, JPG, SVG). Brug Image.asset for
+  /// PNG/JPG (viser korrekt); SvgPicture for SVG (flutter_svg har problemer med
+  /// indlejrede base64-billeder i SVG).
+  static List<String> getCardImagePathsToTry(String avatarName, int stageIndex, {String? letter}) {
+    final svgPath = getCardAssetPath(avatarName, stageIndex, letter: letter);
+    if (svgPath == null) return [];
+    final basePath = svgPath.replaceAll('.svg', '');
+    return ['$basePath.png', '$basePath.jpg', svgPath];
   }
 }

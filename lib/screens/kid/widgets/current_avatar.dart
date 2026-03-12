@@ -192,8 +192,9 @@ class _CurrentAvatarState extends State<CurrentAvatar> {
     }
 
     // Billedet så stort som muligt i højden. Boksens sider 10 px bredere end billedet.
+    // textAreaHeight: plads til navn, progressbar, point-tekst, padding og margin (~130 px)
     const sidePadding = 10.0;
-    const textAreaHeight = 80.0;
+    const textAreaHeight = 140.0;
     final maxH = (widget.maxHeight != null && widget.maxHeight!.isFinite)
         ? widget.maxHeight!
         : 400.0;

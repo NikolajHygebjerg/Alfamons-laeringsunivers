@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -92,6 +95,7 @@ class AlfamonStrength {
 }
 
 /// Billede til kort: lokalt SVG-asset eller netværksbillede. BoxFit.contain viser hele figuren.
+/// Prøver asset først; ved fejl (load eller parse) falder tilbage til netværksbillede.
 class _CardImage extends StatefulWidget {
   final String? assetPath;
   final String imageUrl;
@@ -104,64 +108,169 @@ class _CardImage extends StatefulWidget {
 
 class _CardImageState extends State<_CardImage> {
   static final _assetCache = <String, bool>{};
+  static final _loggedCards = <String>{};
+  static Map<String, String>? _assetLookupByCanonical;
+  static Future<void>? _assetLookupInit;
 
-  Future<bool> _assetExists(String path) async {
-    if (_assetCache.containsKey(path)) return _assetCache[path]!;
-    try {
-      await rootBundle.load(path);
-      _assetCache[path] = true;
-      return true;
-    } catch (_) {
-      _assetCache[path] = false;
-      return false;
+  void _log(String tag, String message, [Object? error, StackTrace? stack]) {
+    developer.log(message, name: 'AlfamonCard.$tag', error: error, stackTrace: stack);
+  }
+
+  String _canonicalizePath(String input) {
+    var s = input.toLowerCase();
+    // Gør precomposed/decomposed nordiske tegn mere robuste.
+    s = s
+        .replaceAll('å', 'a')
+        .replaceAll('æ', 'ae')
+        .replaceAll('ø', 'oe');
+    // Fjern combining marks (fx a + ring).
+    s = s.replaceAll(RegExp(r'[\u0300-\u036f]'), '');
+    // Sammenlign kun på sikre path-tegn.
+    s = s.replaceAll(RegExp(r'[^a-z0-9/_\.\-]'), '');
+    return s;
+  }
+
+  Future<void> _ensureAssetLookup() async {
+    if (_assetLookupByCanonical != null) return;
+    _assetLookupInit ??= () async {
+      try {
+        final manifestRaw = await rootBundle.loadString('AssetManifest.json');
+        final decoded = json.decode(manifestRaw);
+        if (decoded is! Map<String, dynamic>) {
+          _assetLookupByCanonical = {};
+          return;
+        }
+        final map = <String, String>{};
+        for (final key in decoded.keys) {
+          if (!key.startsWith('assets/')) continue;
+          final canonical = _canonicalizePath(key);
+          map.putIfAbsent(canonical, () => key);
+        }
+        _assetLookupByCanonical = map;
+        _log('asset', 'AssetManifest loaded (${map.length} assets)');
+      } catch (e, st) {
+        _assetLookupByCanonical = {};
+        _log('asset', 'FEJL ved load af AssetManifest', e, st);
+      }
+    }();
+    await _assetLookupInit;
+  }
+
+  /// Prøver PNG, JPG, SVG i rækkefølge (PNG/JPG viser korrekt; SVG har flutter_svg-problemer).
+  Future<String?> _resolveFirstAvailablePath(List<String> pathsToTry) async {
+    for (final p in pathsToTry) {
+      final resolved = await _resolveAssetPath(p);
+      if (resolved != null) return resolved;
     }
+    return null;
+  }
+
+  bool _isRasterPath(String path) =>
+      path.endsWith('.png') || path.endsWith('.jpg') || path.endsWith('.jpeg');
+
+  Future<String?> _resolveAssetPath(String requestedPath) async {
+    if (_assetCache[requestedPath] == true) return requestedPath;
+    try {
+      await rootBundle.load(requestedPath);
+      _assetCache[requestedPath] = true;
+      _log('asset', 'OK: $requestedPath');
+      return requestedPath;
+    } catch (e, st) {
+      _log('asset', 'FEJL rootBundle.load: $requestedPath', e, st);
+    }
+
+    await _ensureAssetLookup();
+    final canonical = _canonicalizePath(requestedPath);
+    final altPath = _assetLookupByCanonical?[canonical];
+    if (altPath != null && altPath != requestedPath) {
+      try {
+        await rootBundle.load(altPath);
+        _assetCache[requestedPath] = true;
+        _assetCache[altPath] = true;
+        _log('asset', 'Recovered via AssetManifest: $requestedPath -> $altPath');
+        return altPath;
+      } catch (e, st) {
+        _log('asset', 'Alt path fejlede: $altPath', e, st);
+      }
+    }
+
+    _assetCache[requestedPath] = false;
+    return null;
+  }
+
+  Widget _buildNetworkFallback({String? reason}) {
+    final imageUrl = widget.imageUrl;
+    const fit = BoxFit.contain;
+    if (imageUrl.isEmpty) {
+      _log('fallback', 'imageUrl tom - viser intet');
+      return const SizedBox.expand();
+    }
+    if (reason != null && !_loggedCards.contains('$imageUrl-$reason')) {
+      _loggedCards.add('$imageUrl-$reason');
+      _log('fallback', 'Bruger Image.network (fordi: $reason) - ${imageUrl.length > 60 ? "${imageUrl.substring(0, 60)}..." : imageUrl}');
+    }
+    return Image.network(
+      imageUrl,
+      fit: fit,
+      width: double.infinity,
+      height: double.infinity,
+      errorBuilder: (_, err, st) {
+        _log('network', 'Image.network fejlede', err, st);
+        return const SizedBox.expand();
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final assetPath = widget.assetPath;
     final imageUrl = widget.imageUrl;
-    const fit = BoxFit.contain; // Vis hele figuren uden at beskære
+    const fit = BoxFit.contain;
 
     if (assetPath == null || assetPath.isEmpty) {
-      return Image.network(
-        imageUrl,
-        fit: fit,
-        width: double.infinity,
-        height: double.infinity,
-        errorBuilder: (_, __, ___) => const SizedBox.expand(),
-      );
+      _log('input', 'assetPath=null/empty, imageUrl=${imageUrl.isEmpty ? "tom" : "har URL"}');
+      return _buildNetworkFallback(reason: 'ingen assetPath');
     }
-    return FutureBuilder<bool>(
+
+    // Prøv PNG, JPG først (viser korrekt); SVG har flutter_svg-problemer med base64-billeder
+    final basePath = assetPath.replaceAll('.svg', '');
+    final pathsToTry = ['$basePath.png', '$basePath.jpg', assetPath];
+
+    return FutureBuilder<String?>(
       key: ValueKey(assetPath),
-      future: _assetExists(assetPath),
+      future: _resolveFirstAvailablePath(pathsToTry),
       builder: (context, snapshot) {
-        if (snapshot.data == true) {
+        final resolvedPath = snapshot.data;
+        if (resolvedPath != null) {
+          if (_isRasterPath(resolvedPath)) {
+            return Image.asset(
+              resolvedPath,
+              fit: fit,
+              width: double.infinity,
+              height: double.infinity,
+              errorBuilder: (context, error, stackTrace) {
+                _log('image', 'Image.asset fejlede for $resolvedPath', error, stackTrace);
+                return _buildNetworkFallback(reason: 'png/jpg load fejl');
+              },
+            );
+          }
           return SvgPicture.asset(
-            assetPath,
+            resolvedPath,
             fit: fit,
             width: double.infinity,
             height: double.infinity,
+            allowDrawingOutsideViewBox: true,
+            errorBuilder: (context, error, stackTrace) {
+              _log('svg', 'SvgPicture.asset fejlede for $resolvedPath', error, stackTrace);
+              return _buildNetworkFallback(reason: 'svg parse/render fejl');
+            },
           );
         }
-        if (snapshot.data == false && imageUrl.isNotEmpty) {
-          return Image.network(
-            imageUrl,
-            fit: fit,
-            width: double.infinity,
-            height: double.infinity,
-            errorBuilder: (_, __, ___) => const SizedBox.expand(),
-          );
+        if (snapshot.connectionState == ConnectionState.done && imageUrl.isNotEmpty) {
+          return _buildNetworkFallback(reason: 'asset findes ikke');
         }
-        // Mens vi tjekker asset: prøv netværk
         if (imageUrl.isNotEmpty) {
-          return Image.network(
-            imageUrl,
-            fit: fit,
-            width: double.infinity,
-            height: double.infinity,
-            errorBuilder: (_, __, ___) => const SizedBox.expand(),
-          );
+          return _buildNetworkFallback(reason: 'venter på asset check');
         }
         return const SizedBox.expand();
       },
@@ -488,8 +597,8 @@ class StrengthChoiceGrid extends StatelessWidget {
             onTap: () => onSelect(index),
             borderRadius: BorderRadius.circular(8),
             child: Container(
-              width: 140,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              constraints: const BoxConstraints(minWidth: 100, maxWidth: 140),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.white24, width: 1),
@@ -499,12 +608,15 @@ class StrengthChoiceGrid extends StatelessWidget {
                 children: [
                   Icon(icon, color: Colors.white, size: 20),
                   const SizedBox(width: 8),
-                  Text(
-                    '${s.name}: ${s.value}',
-                    style: const TextStyle(
-                      color: Color(0xFFE8DCC8),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
+                  Flexible(
+                    child: Text(
+                      '${s.name}: ${s.value}',
+                      style: const TextStyle(
+                        color: Color(0xFFE8DCC8),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                 ],
