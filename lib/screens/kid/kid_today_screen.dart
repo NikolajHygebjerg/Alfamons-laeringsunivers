@@ -270,12 +270,6 @@ class _KidTodayScreenState extends State<KidTodayScreen> {
                   onTap: () => context.go('/kid/spil/${widget.kidId}'),
                 ),
                 _NavItem(
-                  icon: Icons.bug_report,
-                  label: 'Test',
-                  selected: false,
-                  onTap: () => context.go('/kid/test/${widget.kidId}'),
-                ),
-                _NavItem(
                   icon: Icons.emoji_events,
                   label: 'Præstationer',
                   selected: false,

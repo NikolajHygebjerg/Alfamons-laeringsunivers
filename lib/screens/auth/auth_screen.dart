@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -15,7 +16,21 @@ class _AuthScreenState extends State<AuthScreen> {
   final _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _isSignUp = false;
+  bool _stayLoggedIn = true;
   String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStayLoggedInPreference();
+  }
+
+  Future<void> _loadStayLoggedInPreference() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (mounted) {
+      setState(() => _stayLoggedIn = prefs.getBool('stayLoggedIn') ?? true);
+    }
+  }
 
   @override
   void dispose() {
@@ -48,6 +63,8 @@ class _AuthScreenState extends State<AuthScreen> {
           email: _emailController.text.trim(),
           password: _passwordController.text,
         );
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setBool('stayLoggedIn', _stayLoggedIn);
         if (mounted) setState(() => _isLoading = false);
       }
     } on AuthException catch (e) {
@@ -218,7 +235,29 @@ class _AuthScreenState extends State<AuthScreen> {
                         ),
                       ),
                     ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
+                      // Forbliv logget ind
+                      if (!_isSignUp)
+                        SizedBox(
+                          width: designWidth * 0.65,
+                          child: CheckboxListTile(
+                            value: _stayLoggedIn,
+                            onChanged: _isLoading
+                                ? null
+                                : (v) => setState(() => _stayLoggedIn = v ?? true),
+                            title: Text(
+                              'Forbliv logget ind',
+                              style: TextStyle(
+                                color: const Color(0xFFE8DCC8),
+                                fontSize: textSize,
+                              ),
+                            ),
+                            activeColor: const Color(0xFFD4A853),
+                            controlAffinity: ListTileControlAffinity.leading,
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                      const SizedBox(height: 16),
                       // Log ind-knap
                       SizedBox(
                         width: designWidth * 0.65,

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'providers/auth_provider.dart';
 import 'screens/auth/auth_screen.dart';
@@ -16,12 +18,19 @@ import 'screens/kid/kid_week_screen.dart';
 import 'screens/kid/kid_library_screen.dart';
 import 'screens/kid/kid_achievements_screen.dart';
 import 'screens/kid/kid_spil_screen.dart';
-import 'screens/kid/kid_test_cards_screen.dart';
 import 'services/supabase_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await SupabaseService.init();
+
+  // Hvis bruger valgte "Forbliv ikke logget ind", log ud ved app-start
+  final prefs = await SharedPreferences.getInstance();
+  final stayLoggedIn = prefs.getBool('stayLoggedIn') ?? true;
+  if (!stayLoggedIn && Supabase.instance.client.auth.currentSession != null) {
+    await Supabase.instance.client.auth.signOut();
+  }
+
   final authProvider = AuthProvider();
   runApp(AlfamonApp(authProvider: authProvider));
 }
@@ -127,13 +136,6 @@ GoRouter _router(AuthProvider authProvider) => GoRouter(
       builder: (context, state) {
         final kidId = state.pathParameters['kidId']!;
         return KidSpilScreen(kidId: kidId);
-      },
-    ),
-    GoRoute(
-      path: '/kid/test/:kidId',
-      builder: (context, state) {
-        final kidId = state.pathParameters['kidId']!;
-        return KidTestCardsScreen(kidId: kidId);
       },
     ),
   ],

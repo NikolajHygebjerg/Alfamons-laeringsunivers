@@ -5,8 +5,13 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../providers/auth_provider.dart';
+import '../../utils/angreb_assets.dart';
 import '../../utils/card_assets.dart';
 import 'widgets/alfamon_card.dart';
+
+/// Angreb-billeder: true = de kigger til højre i originalen. false = de kigger til venstre.
+/// Skift denne hvis figurerne vender forkert – eller tilret alle billeder til at kigge højre.
+const bool _angrebImagesFaceRight = false;
 
 class _GameCard {
   final String id;
@@ -74,8 +79,11 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
   int _kidScore = 0;
   int _computerScore = 0;
   String? _roundWinner; // 'kid', 'computer', 'tie'
+  String? _previousRoundWinner; // Hvem vandt forrige runde – bestemmer hvem der vælger evne
   int _roundNumber = 0;
   bool _gameWinRecorded = false;
+  _GameCard? _gameOverStrongestCard; // Stærkeste alfamon til game over-skærm
+  bool _gameOverKidWon = false;
 
   final _random = Random();
 
@@ -256,6 +264,8 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
     if (_kidCards.isEmpty || _computerCards.isEmpty) return;
 
     setState(() {
+      _gameOverStrongestCard = null;
+      _gameOverKidWon = false;
       _gameState = 'idle';
       _roundNumber = 1;
       _kidScore = 0;
@@ -264,39 +274,88 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
       _computerCard = null;
       _selectedStrengthIndex = null;
       _roundWinner = null;
+      _previousRoundWinner = null;
       _gameWinRecorded = false;
+    });
+  }
+
+  Future<void> _resetAndStartNewGame() async {
+    setState(() => _loading = true);
+    await _loadCards();
+    if (!mounted) return;
+    if (_kidCards.isEmpty || _computerCards.isEmpty) {
+      setState(() => _loading = false);
+      return;
+    }
+    _startGame();
+    setState(() => _loading = false);
+  }
+
+  _GameCard? _getStrongestCard(List<_GameCard> cards) {
+    if (cards.isEmpty) return null;
+    return cards.reduce((a, b) {
+      if (a.stageIndex != b.stageIndex) return a.stageIndex > b.stageIndex ? a : b;
+      final maxA = a.strengths.isEmpty ? 0 : a.strengths.map((s) => s.value).reduce((x, y) => x > y ? x : y);
+      final maxB = b.strengths.isEmpty ? 0 : b.strengths.map((s) => s.value).reduce((x, y) => x > y ? x : y);
+      return maxA >= maxB ? a : b;
     });
   }
 
   void _kidPlayCard() {
     if (_gameState != 'idle' || _kidCards.isEmpty) return;
-
-    final card = _kidCards[_random.nextInt(_kidCards.length)];
-
-    setState(() {
-      _kidCard = card;
-      _gameState = 'choosing_strength';
-    });
-  }
-
-  void _selectStrength(int index) {
-    if (_gameState != 'choosing_strength' || _kidCard == null) return;
     if (_computerCards.isEmpty) {
       _endGame();
       return;
     }
 
-    final compCard = _computerCards[_random.nextInt(_computerCards.length)];
+    final card = _kidCards.first;
+    final compCard = _computerCards.first;
+
+    final kidChooses = _previousRoundWinner == null || _previousRoundWinner == 'kid' || _previousRoundWinner == 'tie';
+
+    if (kidChooses) {
+      setState(() {
+        _kidCards.removeAt(0);
+        _computerCards.removeAt(0);
+        _kidCard = card;
+        _computerCard = compCard;
+        _gameState = 'choosing_strength';
+      });
+    } else {
+      // Modstanderen vandt forrige runde – de bestemmer evnen. Vælger altid stærkeste evne.
+      final compStrengths = compCard.strengths;
+      final strongest = compStrengths.isNotEmpty
+          ? compStrengths.reduce((a, b) => a.value >= b.value ? a : b)
+          : null;
+      final compStrengthIndex = strongest?.strengthIndex ?? 0;
+
+      setState(() {
+        _kidCards.removeAt(0);
+        _computerCards.removeAt(0);
+        _kidCard = card;
+        _computerCard = compCard;
+        _selectedStrengthIndex = compStrengthIndex;
+        _gameState = 'round_result';
+      });
+
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (!mounted) return;
+        _resolveRound(compCard, compStrengthIndex);
+      });
+    }
+  }
+
+  void _selectStrength(int index) {
+    if (_gameState != 'choosing_strength' || _kidCard == null || _computerCard == null) return;
 
     setState(() {
-      _computerCard = compCard;
       _selectedStrengthIndex = index;
       _gameState = 'round_result';
     });
 
     Future.delayed(const Duration(milliseconds: 500), () {
       if (!mounted) return;
-      _resolveRound(compCard, index);
+      _resolveRound(_computerCard!, index);
     });
   }
 
@@ -322,20 +381,16 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
     }
 
     setState(() => _roundWinner = winner);
-
-    Future.delayed(const Duration(milliseconds: 2000), () {
-      if (!mounted) return;
-      _applyRoundResult(winner, compCard);
-    });
   }
 
   void _applyRoundResult(String winner, _GameCard compCard) {
     final kidCard = _kidCard!;
 
     if (winner == 'kid') {
+      // Vundet: mit vinderkort + modstanderens taberkort nederst i min bunke
       setState(() {
         _kidScore++;
-        _computerCards.removeWhere((c) => c.id == compCard.id);
+        _kidCards.add(kidCard);
         _kidCards.add(_GameCard(
           id: 'kid-${DateTime.now().millisecondsSinceEpoch}-${compCard.avatarId}',
           avatarId: compCard.avatarId,
@@ -347,9 +402,9 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
         ));
       });
     } else if (winner == 'computer') {
+      // Tabt: mister mit kort til modstanderen. Modstanderens kort går tilbage i deres bunke.
       setState(() {
         _computerScore++;
-        _kidCards.removeWhere((c) => c.id == kidCard.id);
         _computerCards.add(_GameCard(
           id: 'comp-${DateTime.now().millisecondsSinceEpoch}-${kidCard.avatarId}',
           avatarId: kidCard.avatarId,
@@ -359,9 +414,15 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
           stageIndex: kidCard.stageIndex,
           strengths: kidCard.strengths,
         ));
+        _computerCards.add(compCard);
+      });
+    } else {
+      // Uafgjort: begge kort går tilbage i deres egne bunker
+      setState(() {
+        _kidCards.add(kidCard);
+        _computerCards.add(compCard);
       });
     }
-    // tie: ingen overfører kort
 
     if (_kidCards.isEmpty || _computerCards.isEmpty) {
       _endGame();
@@ -370,6 +431,7 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
 
     setState(() {
       _roundNumber++;
+      _previousRoundWinner = winner == 'tie' ? 'kid' : winner;
       _kidCard = null;
       _computerCard = null;
       _selectedStrengthIndex = null;
@@ -380,8 +442,15 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
 
   void _endGame() {
     final kidWon = _kidCards.isNotEmpty;
+    final strongest = kidWon
+        ? _getStrongestCard(_kidCards)
+        : _getStrongestCard(_computerCards);
 
-    setState(() => _gameState = 'game_over');
+    setState(() {
+      _gameState = 'game_over';
+      _gameOverStrongestCard = strongest;
+      _gameOverKidWon = kidWon;
+    });
 
     if (kidWon && !_gameWinRecorded) {
       _gameWinRecorded = true;
@@ -479,50 +548,52 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
   }
 
   Widget _buildGameOver() {
-    final kidWon = _kidCards.isNotEmpty;
+    final kidWon = _gameOverKidWon;
+    final strongest = _gameOverStrongestCard;
 
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (strongest != null) ...[
+            _GameOverAlfamon(
+              card: strongest,
+              message: kidWon ? 'Du vandt!' : 'Du tabte',
+              kidWon: kidWon,
+            ),
+            const SizedBox(height: 24),
+          ] else ...[
             Text(
-              kidWon ? '🎉 Tillykke!' : '💪 Prøv igen!',
-              style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.bold,
+              kidWon ? 'Du vandt!' : 'Du tabte',
+              style: const TextStyle(
+                fontSize: 32,
+                fontWeight: FontWeight.w900,
                 color: Colors.white,
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              kidWon ? 'Du vandt!' : 'Computeren vandt',
-              style: TextStyle(
-                fontSize: 18,
-                color: Colors.white.withValues(alpha: 0.9),
-              ),
-            ),
             const SizedBox(height: 16),
-            Text(
-              '$_kidScore - $_computerScore',
-              style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.amber,
-              ),
-            ),
-            const SizedBox(height: 24),
-            FilledButton(
-              onPressed: _startGame,
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFFF9C433),
-                foregroundColor: Colors.black87,
-              ),
-              child: const Text('Spil igen'),
-            ),
           ],
-        ),
+          Text(
+            '$_kidScore - $_computerScore',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.white.withValues(alpha: 0.95),
+            ),
+          ),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: _resetAndStartNewGame,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Ny kamp'),
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFF9C433),
+              foregroundColor: Colors.black87,
+              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+              textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -531,6 +602,15 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
     if (_gameState == 'idle' && _kidCard == null) {
       return _buildIdleLayout();
     }
+    if (_gameState == 'choosing_strength') {
+      return _buildChoosingLayout();
+    }
+    return _buildDuelLayout();
+  }
+
+  /// Når man spiller kort: vis kortet og evnerne man kan vælge.
+  Widget _buildChoosingLayout() {
+    final kidCard = _kidCard!;
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Column(
@@ -550,67 +630,183 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          if (_computerCard != null)
-            Center(
-              child: AlfamonCard(
-                card: _computerCard!.toAlfamonCardData(),
-                selectedStrengthIndex: _selectedStrengthIndex,
-                isWinner: _roundWinner == 'computer',
-                width: _gameCardWidth,
-              ),
+          Center(
+            child: AlfamonCard(
+              card: kidCard.toAlfamonCardData(),
+              width: _gameCardWidth,
             ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'Vælg styrke',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+            ),
+          ),
           const SizedBox(height: 12),
-          if (_kidCard != null)
-            Center(
-              child: AlfamonCard(
-                card: _kidCard!.toAlfamonCardData(),
-                selectedStrengthIndex: _selectedStrengthIndex,
-                isWinner: _roundWinner == 'kid',
-                width: _gameCardWidth,
-              ),
-            ),
-          if (_kidCard != null && _gameState == 'choosing_strength') ...[
-            const SizedBox(height: 16),
-            Text(
-              'Vælg styrke',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 12),
-            StrengthChoiceGrid(
-              strengths: _kidCard!.strengths
-                  .map((s) => AlfamonStrength(
-                        strengthIndex: s.strengthIndex,
-                        name: s.name,
-                        value: s.value,
-                      ))
-                  .toList(),
-              onSelect: _selectStrength,
-            ),
-          ],
-          if (_gameState == 'round_result' && _roundWinner != null) ...[
-            const SizedBox(height: 16),
-            Text(
-              _roundWinner == 'kid'
-                  ? '✓ Du vandt runden!'
-                  : _roundWinner == 'computer'
-                      ? '✗ Computeren vandt'
-                      : 'Uafgjort',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: _roundWinner == 'kid'
-                    ? Colors.green
-                    : _roundWinner == 'computer'
-                        ? Colors.red
-                        : Colors.amber,
-              ),
-            ),
-          ],
+          StrengthChoiceGrid(
+            strengths: kidCard.strengths
+                .map((s) => AlfamonStrength(
+                      strengthIndex: s.strengthIndex,
+                      name: s.name,
+                      value: s.value,
+                    ))
+                .toList(),
+            onSelect: _selectStrength,
+          ),
         ],
+      ),
+    );
+  }
+
+  /// Efter valg af evne: kort i venstre hjørne, angreb-figurer peger mod hinanden.
+  Widget _buildDuelLayout() {
+    final kidCard = _kidCard!;
+    final computerCard = _computerCard!;
+    final selectedStrength = _selectedStrengthIndex != null
+        ? kidCard.strengths
+            .where((s) => s.strengthIndex == _selectedStrengthIndex)
+            .firstOrNull
+        : null;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  _ScoreCard(label: 'Dig', score: _kidScore),
+                  Text(
+                    'Runde $_roundNumber',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.white.withValues(alpha: 0.9),
+                    ),
+                  ),
+                  _ScoreCard(label: 'Computer', score: _computerScore),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(
+                      child: _DuelAngrebTile(
+                        card: kidCard,
+                        faceRight: _angrebImagesFaceRight,
+                        strengthName: selectedStrength?.name,
+                      ),
+                    ),
+                    Expanded(
+                      child: _DuelAngrebTile(
+                        card: computerCard,
+                        faceRight: !_angrebImagesFaceRight,
+                        strengthName: selectedStrength?.name,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (_roundWinner != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _roundWinner == 'kid'
+                      ? '✓ Du vandt runden!'
+                      : _roundWinner == 'computer'
+                          ? '✗ Computeren vandt'
+                          : 'Uafgjort',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: _roundWinner == 'kid'
+                        ? Colors.green
+                        : _roundWinner == 'computer'
+                            ? Colors.red
+                            : Colors.amber,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: () => _applyRoundResult(_roundWinner!, _computerCard!),
+                  icon: const Icon(Icons.sports_martial_arts),
+                  label: const Text('Næste kamp'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFF9C433),
+                    foregroundColor: Colors.black87,
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+                    textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+        Positioned(
+          bottom: 16,
+          left: 8,
+          child: AlfamonCard(
+            card: kidCard.toAlfamonCardData(),
+            selectedStrengthIndex: _selectedStrengthIndex,
+            isWinner: _roundWinner == 'kid',
+            width: _gameCardWidth,
+          ),
+        ),
+        if (_roundWinner == 'kid')
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: MediaQuery.of(context).size.width / 2,
+            child: Center(child: _buildWinnerSplash()),
+          ),
+        if (_roundWinner == 'computer')
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: MediaQuery.of(context).size.width / 2,
+            child: Center(child: _buildWinnerSplash()),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildWinnerSplash() {
+    return IgnorePointer(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9C433).withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black38,
+              blurRadius: 20,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+        child: Text(
+          'VINDER',
+          style: TextStyle(
+            fontSize: 56,
+            fontWeight: FontWeight.w900,
+            color: Colors.white,
+            letterSpacing: 4,
+            shadows: [
+              Shadow(color: Colors.black54, offset: const Offset(2, 2), blurRadius: 4),
+              Shadow(color: Colors.black38, offset: const Offset(-1, -1), blurRadius: 2),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -862,12 +1058,6 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
                   selected: true,
                 ),
                 _NavItem(
-                  icon: Icons.bug_report,
-                  label: 'Test',
-                  selected: false,
-                  onTap: () => context.go('/kid/test/$kidId'),
-                ),
-                _NavItem(
                   icon: Icons.emoji_events,
                   label: 'Præstationer',
                   selected: false,
@@ -890,6 +1080,198 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
       ),
     );
   }
+}
+
+/// Viser angreb-figur. faceRight: true = vis uden flip, false = flip horisontalt.
+class _DuelAngrebTile extends StatelessWidget {
+  final _GameCard? card;
+  final bool faceRight;
+  final String? strengthName;
+
+  const _DuelAngrebTile({
+    required this.card,
+    required this.faceRight,
+    this.strengthName,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (card == null) {
+      return const SizedBox.shrink();
+    }
+
+    final path = AngrebAssets.getAngrebAssetPath(
+      card!.name,
+      card!.stageIndex,
+      letter: card!.letter,
+    );
+
+    Widget imageWidget;
+    if (path != null) {
+      imageWidget = Image.asset(
+        path,
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => _placeholder(card!.name),
+      );
+    } else {
+      imageWidget = _placeholder(card!.name);
+    }
+
+    // Atiachangreb2 vender modsat af de andre – brug override
+    final flipOverride = path != null && path.contains('Atiachangreb2');
+    final shouldFlip = flipOverride ? faceRight : !faceRight;
+    if (shouldFlip) {
+      imageWidget = Transform(
+        alignment: Alignment.center,
+        transform: Matrix4.identity()..scale(-1.0, 1.0),
+        child: imageWidget,
+      );
+    }
+
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Expanded(
+          child: Center(
+            child: imageWidget,
+          ),
+        ),
+        if (strengthName != null && strengthName!.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            strengthName!,
+            style: const TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              shadows: [
+                Shadow(color: Colors.black54, offset: Offset(1, 1)),
+                Shadow(color: Colors.black38, blurRadius: 4),
+              ],
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _placeholder(String name) {
+    return Container(
+      color: Colors.white12,
+      child: Center(
+        child: Text(
+          name,
+          style: TextStyle(color: Colors.white70, fontSize: 14),
+        ),
+      ),
+    );
+  }
+}
+
+/// Viser stærkeste alfamon med taleboble (Du vandt / Du tabte).
+class _GameOverAlfamon extends StatelessWidget {
+  final _GameCard card;
+  final String message;
+  final bool kidWon;
+
+  const _GameOverAlfamon({
+    required this.card,
+    required this.message,
+    required this.kidWon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final path = AngrebAssets.getAngrebAssetPath(
+      card.name,
+      card.stageIndex,
+      letter: card.letter,
+    );
+    final bubbleColor = kidWon
+        ? const Color(0xFF2E7D32).withValues(alpha: 0.95)
+        : const Color(0xFFC62828).withValues(alpha: 0.95);
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 16),
+              decoration: BoxDecoration(
+                color: bubbleColor,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black26,
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Text(
+                message,
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: -10,
+              child: Center(
+                child: CustomPaint(
+                  size: const Size(24, 14),
+                  painter: _BubbleTailPainter(color: bubbleColor),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+        SizedBox(
+          width: 180,
+          height: 180,
+          child: path != null
+              ? Image.asset(path, fit: BoxFit.contain)
+              : Container(
+                  color: Colors.white12,
+                  child: Center(
+                    child: Text(
+                      card.name,
+                      style: TextStyle(color: Colors.white70, fontSize: 16),
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _BubbleTailPainter extends CustomPainter {
+  final Color color;
+
+  _BubbleTailPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final path = Path();
+    path.moveTo(size.width / 2, size.height);
+    path.lineTo(0, 0);
+    path.lineTo(size.width, 0);
+    path.close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _ScoreCard extends StatelessWidget {
