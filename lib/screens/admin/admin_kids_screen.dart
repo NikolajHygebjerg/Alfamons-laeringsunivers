@@ -1,0 +1,140 @@
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../models/kid.dart';
+
+class AdminKidsScreen extends StatefulWidget {
+  const AdminKidsScreen({super.key});
+
+  @override
+  State<AdminKidsScreen> createState() => _AdminKidsScreenState();
+}
+
+class _AdminKidsScreenState extends State<AdminKidsScreen> {
+  List<Kid> _kids = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final res = await Supabase.instance.client
+        .from('kids')
+        .select('id,name,avatar_url,pin_code')
+        .order('created_at');
+    setState(() {
+      _kids = (res as List).map((e) => Kid.fromJson(e)).toList();
+      _loading = false;
+    });
+  }
+
+  Future<void> _addKid() async {
+    final nameController = TextEditingController();
+    final pinController = TextEditingController();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Tilføj barn'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Navn'),
+            ),
+            TextField(
+              controller: pinController,
+              decoration: const InputDecoration(
+                labelText: 'PIN (valgfrit, 4 cifre)',
+              ),
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuller'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Tilføj'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    final profile = await Supabase.instance.client
+        .from('profiles')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+
+    final parentId = profile?['id'];
+    if (parentId == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Profil ikke fundet. Opret venligst en profil først.')),
+        );
+      }
+      return;
+    }
+
+    final pin = pinController.text.trim();
+    await Supabase.instance.client.from('kids').insert({
+      'parent_id': parentId,
+      'name': nameController.text.trim(),
+      'pin_code': pin.isEmpty ? null : pin,
+    });
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Barn tilføjet')),
+      );
+      _load();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Børn'),
+        backgroundColor: const Color(0xFF5A1A0D),
+        foregroundColor: Colors.white,
+      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _kids.length,
+              itemBuilder: (_, i) {
+                final k = _kids[i];
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 8),
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundImage: k.avatarUrl != null ? NetworkImage(k.avatarUrl!) : null,
+                      child: k.avatarUrl == null ? const Icon(Icons.person) : null,
+                    ),
+                    title: Text(k.name),
+                    subtitle: k.pinCode != null ? const Text('PIN beskyttet') : null,
+                  ),
+                );
+              },
+            ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: _addKid,
+        backgroundColor: const Color(0xFFF9C433),
+        child: const Icon(Icons.add, color: Colors.black),
+      ),
+    );
+  }
+}

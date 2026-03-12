@@ -1,0 +1,292 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+class AuthScreen extends StatefulWidget {
+  const AuthScreen({super.key});
+
+  @override
+  State<AuthScreen> createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends State<AuthScreen> {
+  final _formKey = GlobalKey<FormState>();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _isLoading = false;
+  bool _isSignUp = false;
+  String? _errorMessage;
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    setState(() {
+      _errorMessage = null;
+      _isLoading = true;
+    });
+
+    try {
+      if (_isSignUp) {
+        await Supabase.instance.client.auth.signUp(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+        );
+        if (mounted) {
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('Tjek din email for at bekræfte kontoen')),
+          );
+        }
+      } else {
+        await Supabase.instance.client.auth.signInWithPassword(
+          email: _emailController.text.trim(),
+          password: _passwordController.text,
+        );
+        if (mounted) setState(() => _isLoading = false);
+      }
+    } on AuthException catch (e) {
+      setState(() {
+        _errorMessage = e.message;
+        _isLoading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  Future<void> _resetPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty) {
+      setState(() => _errorMessage = 'Indtast din email');
+      return;
+    }
+    setState(() {
+      _errorMessage = null;
+      _isLoading = true;
+    });
+    try {
+      await Supabase.instance.client.auth.resetPasswordForEmail(email);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Tjek din email for nulstilling')),
+        );
+      }
+    } on AuthException catch (e) {
+      setState(() {
+        _errorMessage = e.message;
+      });
+    }
+    setState(() => _isLoading = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final shortestSide = MediaQuery.of(context).size.shortestSide;
+    final isTablet = shortestSide >= 600;
+    final bgAsset = isTablet ? 'assets/loginipad.svg' : 'assets/loginiphone.svg';
+
+    return Scaffold(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Baggrund – iPad eller iPhone design
+          Positioned.fill(
+            child: SvgPicture.asset(
+              bgAsset,
+              fit: BoxFit.cover,
+            ),
+          ),
+          // Overlay med interaktive elementer placeret på designet
+          SafeArea(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Design-størrelse tilpasset iPad vs iPhone
+                final designWidth = isTablet ? 450.0 : 360.0;
+                final designHeight = isTablet ? 900.0 : 750.0;
+                // Layout tilpasset hvert design
+                final topSpacing = isTablet ? 280.0 : 200.0;
+                final textSize = isTablet ? 16.0 : 14.0;
+                final smallTextSize = isTablet ? 14.0 : 13.0;
+                return Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.center,
+                    child: SizedBox(
+                      width: designWidth,
+                      height: designHeight,
+                      child: Form(
+                        key: _formKey,
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: isTablet ? 48 : 32),
+                          child: Column(
+                    mainAxisSize: MainAxisSize.max,
+                    children: [
+                      SizedBox(height: topSpacing),
+                      if (_errorMessage != null)
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 16),
+                          decoration: BoxDecoration(
+                            color: Colors.red.withValues(alpha: 0.8),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: Color(0xFFD4A853),
+                                width: 1),
+                          ),
+                          child: Text(
+                            _errorMessage!,
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                        ),
+                      // Email-felt
+                      SizedBox(
+                        width: designWidth * 0.65,
+                        child: TextFormField(
+                        controller: _emailController,
+                        keyboardType: TextInputType.emailAddress,
+                        style: const TextStyle(color: Color(0xFFE8DCC8)),
+                        decoration: InputDecoration(
+                          labelText: 'Email',
+                          labelStyle: const TextStyle(color: Color(0xFFB8A88A)),
+                          hintText: 'Indtast din email',
+                          hintStyle: TextStyle(color: Color(0xFFB8A88A)
+                              .withValues(alpha: 0.6)),
+                          filled: true,
+                          fillColor: const Color(0xFF4A4035),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                                color: Color(0xFF8B7355), width: 1),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                                color: Color(0xFF8B7355), width: 1),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                                color: Color(0xFFD4A853), width: 1),
+                          ),
+                        ),
+                      ),
+                    ),
+                      const SizedBox(height: 12),
+                      // Adgangskode-felt
+                      SizedBox(
+                        width: designWidth * 0.65,
+                        child: TextFormField(
+                        controller: _passwordController,
+                        obscureText: true,
+                        style: const TextStyle(color: Color(0xFFE8DCC8)),
+                        decoration: InputDecoration(
+                          labelText: 'Adgangskode',
+                          labelStyle: const TextStyle(color: Color(0xFFB8A88A)),
+                          hintText: 'Indtast din adgangskode',
+                          hintStyle: TextStyle(color: Color(0xFFB8A88A)
+                              .withValues(alpha: 0.6)                          ),
+                          filled: true,
+                          fillColor: const Color(0xFF4A4035),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                                color: Color(0xFF8B7355), width: 1),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                                color: Color(0xFF8B7355), width: 1),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            borderSide: const BorderSide(
+                                color: Color(0xFFD4A853), width: 1),
+                          ),
+                        ),
+                      ),
+                    ),
+                      const SizedBox(height: 24),
+                      // Log ind-knap
+                      SizedBox(
+                        width: designWidth * 0.65,
+                        child: ElevatedButton(
+                          onPressed: _isLoading ? null : _submit,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF8B7355),
+                            foregroundColor: const Color(0xFFE8DCC8),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: _isLoading
+                              ? const SizedBox(
+                                  height: 24,
+                                  width: 24,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFFE8DCC8),
+                                  ),
+                                )
+                              : Text(
+                                  _isSignUp ? 'Opret konto' : 'Log ind',
+                                  style: TextStyle(fontSize: textSize),
+                                ),
+                        ),
+                      ),
+                      const Spacer(),
+                      // Tekst nederst – uden sort baggrund
+                      TextButton(
+                        onPressed: _isLoading
+                            ? null
+                            : () => setState(() => _isSignUp = !_isSignUp),
+                        style: TextButton.styleFrom(
+                          foregroundColor: const Color(0xFFE8DCC8),
+                        ),
+                        child: Text(
+                          _isSignUp
+                              ? 'Har du allerede en konto? Log ind'
+                              : 'Har du ikke en konto? Opret',
+                          style: TextStyle(fontSize: textSize),
+                        ),
+                      ),
+                      if (!_isSignUp)
+                        TextButton(
+                          onPressed: _isLoading ? null : _resetPassword,
+                          style: TextButton.styleFrom(
+                            foregroundColor: const Color(0xFFE8DCC8),
+                          ),
+                          child: Text(
+                            'Glemt adgangskode?',
+                            style: TextStyle(fontSize: smallTextSize),
+                          ),
+                        ),
+                      const SizedBox(height: 24),
+                          ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

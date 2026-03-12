@@ -1,0 +1,33 @@
+# Cursor indeksering - udeluk disse for at spare RAM
+# Cursor læser IKKE disse filer til AI-kontekst, hvilket sparer betydeligt på hukommelse
+
+# Flutter/Dart build og cache
+build/
+.dart_tool/
+.pub-cache/
+.pub/
+.flutter-plugins-dependencies
+
+# Genereret kode (kan rekonstrueres)
+**/*.g.dart
+**/*.mocks.dart
+
+# Coverage og test output
+coverage/
+
+# Android build artifacts
+android/app/debug/
+android/app/profile/
+android/app/release/
+
+# iOS build
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+
+# Dokumentation
+**/doc/api/
+
+# Git (Cursor behøver ikke indeksere .git)
+.git/
