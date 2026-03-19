@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../providers/auth_provider.dart';
 
 const _achievementDefinitions = {
   'first_task': ('Første opgave', 'Færdiggjort din første opgave', '🎯'),
@@ -437,6 +437,12 @@ class _KidAchievementsScreenState extends State<KidAchievementsScreen> {
                   onTap: () => context.go('/kid/library/${widget.kidId}'),
                 ),
                 _NavItem(
+                  icon: Icons.pets,
+                  label: 'Alfamons',
+                  selected: false,
+                  onTap: () => context.go('/kid/alfamons/${widget.kidId}'),
+                ),
+                _NavItem(
                   icon: Icons.sports_esports,
                   label: 'Spil',
                   selected: false,
@@ -452,8 +458,10 @@ class _KidAchievementsScreenState extends State<KidAchievementsScreen> {
           ),
           TextButton(
             onPressed: () async {
-              await context.read<AuthProvider>().signOut();
-              if (context.mounted) context.go('/auth');
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('kidId');
+              await prefs.remove('kidStayLoggedIn');
+              if (context.mounted) context.go('/kid/select');
             },
             child: const Text(
               'Log ud',

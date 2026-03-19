@@ -34,34 +34,52 @@ class _KidSelectScreenState extends State<KidSelectScreen> {
   }
 
   Future<void> _selectKid(Kid kid) async {
+    bool stayLoggedIn = true;
     if (kid.pinCode != null && kid.pinCode!.isNotEmpty) {
       final controller = TextEditingController();
-      final ok = await showDialog<bool>(
+      bool stayLoggedInValue = true;
+      final result = await showDialog<({bool ok, bool stayLoggedIn})>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Indtast PIN'),
-          content: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            maxLength: 4,
-            obscureText: true,
-            decoration: const InputDecoration(
-              hintText: '4-cifret PIN',
+        builder: (ctx) => StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
+            title: const Text('Indtast PIN'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: controller,
+                  keyboardType: TextInputType.number,
+                  maxLength: 4,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    hintText: '4-cifret PIN',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                CheckboxListTile(
+                  value: stayLoggedInValue,
+                  onChanged: (v) => setState(() => stayLoggedInValue = v ?? true),
+                  title: const Text('Forbliv logget ind'),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
             ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, (ok: false, stayLoggedIn: false)),
+                child: const Text('Annuller'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, (ok: true, stayLoggedIn: stayLoggedInValue)),
+                child: const Text('OK'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Annuller'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('OK'),
-            ),
-          ],
         ),
       );
-      if (ok != true) return;
+      if (result == null || !result.ok) return;
       final pin = controller.text;
       if (pin.length != 4 || pin != kid.pinCode) {
         if (mounted) {
@@ -71,10 +89,12 @@ class _KidSelectScreenState extends State<KidSelectScreen> {
         }
         return;
       }
+      stayLoggedIn = result.stayLoggedIn;
     }
 
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('kidId', kid.id);
+    await prefs.setBool('kidStayLoggedIn', stayLoggedIn);
 
     if (mounted) {
       context.go('/kid/today/${kid.id}');

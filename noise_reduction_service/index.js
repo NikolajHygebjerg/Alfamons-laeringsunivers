@@ -1,15 +1,13 @@
 /**
- * Audio Noise Reduction Service
+ * Audio Noise Reduction Service (Production)
  *
  * Downloads audio from Supabase Storage, applies FFmpeg afftdn filter,
  * and uploads the processed file back (overwrites original).
  *
- * Deploy to Railway, Render, or Fly.io. Requires FFmpeg installed.
- *
  * Environment variables:
- *   SUPABASE_URL - Your Supabase project URL
- *   SUPABASE_SERVICE_ROLE_KEY - Service role key (for storage access)
- *   API_KEY - Secret key for authenticating requests (optional but recommended)
+ *   SUPABASE_URL - Supabase project URL
+ *   SUPABASE_SERVICE_ROLE_KEY - Service role key
+ *   API_KEY - Secret for authenticating requests (required in production)
  *   PORT - Server port (default 3000)
  */
 
@@ -28,10 +26,15 @@ const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 const API_KEY = process.env.API_KEY;
 
 const BUCKET = 'book-audio';
+const FFMPEG_TIMEOUT_MS = 60000;
 
 if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
   console.error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
   process.exit(1);
+}
+
+if (!API_KEY) {
+  console.warn('Warning: API_KEY not set. Set it in production.');
 }
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
@@ -60,14 +63,20 @@ function authOk(req) {
 async function processAudio(filePath) {
   const tmpDir = path.dirname(filePath);
   const outputPath = path.join(tmpDir, `denoised_${path.basename(filePath)}`);
-  // afftdn: nr=12 (noise reduction dB), nf=-50 (noise floor), tn=1 (track noise adaptively)
   const cmd = `ffmpeg -y -i "${filePath}" -af "afftdn=nr=12:nf=-50:tn=1" "${outputPath}"`;
-  await execAsync(cmd);
+  await execAsync(cmd, { timeout: FFMPEG_TIMEOUT_MS });
   return outputPath;
 }
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
+
+  // Health check for Render/monitoring
+  if (req.method === 'GET' && req.url === '/health') {
+    res.writeHead(200);
+    res.end(JSON.stringify({ status: 'ok' }));
+    return;
+  }
 
   if (req.method !== 'POST' || req.url !== '/process') {
     res.writeHead(404);
@@ -97,7 +106,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // Sanitize: only allow filename, no path traversal
   const safePath = path.basename(filePath);
   if (!safePath || safePath.includes('..')) {
     res.writeHead(400);
@@ -111,30 +119,25 @@ const server = http.createServer(async (req, res) => {
   try {
     fs.mkdirSync(tmpDir, { recursive: true });
 
-    // Download from Supabase Storage
     const { data, error: downloadError } = await supabase.storage
       .from(BUCKET)
       .download(safePath);
 
     if (downloadError || !data) {
       res.writeHead(404);
-      res.end(JSON.stringify({ error: 'File not found in storage', detail: downloadError?.message }));
+      res.end(JSON.stringify({ error: 'File not found' }));
       return;
     }
 
-    const buffer = Buffer.from(await data.arrayBuffer());
-    fs.writeFileSync(inputPath, buffer);
+    fs.writeFileSync(inputPath, Buffer.from(await data.arrayBuffer()));
 
-    // Process with FFmpeg
     const outputPath = await processAudio(inputPath);
     const processedBuffer = fs.readFileSync(outputPath);
 
-    // Upload back (overwrite)
     const { error: uploadError } = await supabase.storage
       .from(BUCKET)
       .upload(safePath, processedBuffer, { upsert: true });
 
-    // Cleanup
     try {
       fs.unlinkSync(inputPath);
       fs.unlinkSync(outputPath);
@@ -142,24 +145,23 @@ const server = http.createServer(async (req, res) => {
 
     if (uploadError) {
       res.writeHead(500);
-      res.end(JSON.stringify({ error: 'Upload failed', detail: uploadError.message }));
+      res.end(JSON.stringify({ error: 'Upload failed' }));
       return;
     }
 
     res.writeHead(200);
     res.end(JSON.stringify({ success: true, path: safePath }));
   } catch (err) {
-    console.error(err);
     try {
       if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);
       const outPath = path.join(tmpDir, `denoised_${safePath}`);
       if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
     } catch {}
     res.writeHead(500);
-    res.end(JSON.stringify({ error: 'Processing failed', detail: err.message }));
+    res.end(JSON.stringify({ error: 'Processing failed' }));
   }
 });
 
 server.listen(PORT, () => {
-  console.log(`Noise reduction service listening on port ${PORT}`);
+  console.log(`Listening on port ${PORT}`);
 });

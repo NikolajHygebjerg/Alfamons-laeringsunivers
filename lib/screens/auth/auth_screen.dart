@@ -112,6 +112,7 @@ class _AuthScreenState extends State<AuthScreen> {
     final bgAsset = isTablet ? 'assets/loginipad.svg' : 'assets/loginiphone.svg';
 
     return Scaffold(
+      resizeToAvoidBottomInset: true,
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -134,9 +135,10 @@ class _AuthScreenState extends State<AuthScreen> {
                 final textSize = isTablet ? 16.0 : 14.0;
                 final smallTextSize = isTablet ? 14.0 : 13.0;
                 return Center(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.center,
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.viewInsetsOf(context).bottom,
+                    ),
                     child: SizedBox(
                       width: designWidth,
                       height: designHeight,

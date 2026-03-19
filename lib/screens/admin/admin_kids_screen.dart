@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/kid.dart';
 
@@ -126,6 +127,7 @@ class _AdminKidsScreenState extends State<AdminKidsScreen> {
                     ),
                     title: Text(k.name),
                     subtitle: k.pinCode != null ? const Text('PIN beskyttet') : null,
+                    onTap: () => context.push('/admin/kids/edit/${k.id}', extra: k),
                   ),
                 );
               },

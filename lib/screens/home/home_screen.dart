@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/auth_provider.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -58,7 +59,17 @@ class HomeScreen extends StatelessWidget {
                                 Expanded(
                                   child: _ModeButton(
                                     title: 'Barn',
-                                    onTap: () => context.go('/kid/select'),
+                                    onTap: () async {
+                                      final prefs = await SharedPreferences.getInstance();
+                                      final kidId = prefs.getString('kidId');
+                                      final kidStayLoggedIn = prefs.getBool('kidStayLoggedIn') ?? true;
+                                      if (!context.mounted) return;
+                                      if (kidId != null && kidStayLoggedIn) {
+                                        context.go('/kid/today/$kidId');
+                                      } else {
+                                        context.go('/kid/select');
+                                      }
+                                    },
                                     textSize: textSize,
                                   ),
                                 ),
@@ -68,6 +79,9 @@ class HomeScreen extends StatelessWidget {
                           const SizedBox(height: 24),
                           TextButton(
                             onPressed: () async {
+                              final prefs = await SharedPreferences.getInstance();
+                              await prefs.remove('kidId');
+                              await prefs.remove('kidStayLoggedIn');
                               await context.read<AuthProvider>().signOut();
                               if (context.mounted) context.go('/auth');
                             },

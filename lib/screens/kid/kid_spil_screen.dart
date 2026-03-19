@@ -1,12 +1,16 @@
+import 'dart:async';
 import 'dart:math';
+import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../../providers/auth_provider.dart';
 import '../../utils/angreb_assets.dart';
 import '../../utils/card_assets.dart';
+import '../../widgets/duel_angreb_tile.dart';
 import 'widgets/alfamon_card.dart';
 
 /// Angreb-billeder: true = de kigger til højre i originalen. false = de kigger til venstre.
@@ -47,6 +51,13 @@ class _GameCard {
       );
 }
 
+int _parseStrengthValue(dynamic v) {
+  if (v == null) return 0;
+  if (v is int) return v.clamp(0, 100);
+  if (v is num) return v.round().clamp(0, 100);
+  return int.tryParse(v.toString()) ?? 0;
+}
+
 class _Strength {
   final int strengthIndex;
   final String name;
@@ -61,8 +72,9 @@ class _Strength {
 
 class KidSpilScreen extends StatefulWidget {
   final String kidId;
+  final String? computerMatchId;
 
-  const KidSpilScreen({super.key, required this.kidId});
+  const KidSpilScreen({super.key, required this.kidId, this.computerMatchId});
 
   @override
   State<KidSpilScreen> createState() => _KidSpilScreenState();
@@ -81,16 +93,98 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
   String? _roundWinner; // 'kid', 'computer', 'tie'
   String? _previousRoundWinner; // Hvem vandt forrige runde – bestemmer hvem der vælger evne
   int _roundNumber = 0;
+  bool _barometersReady = false; // Barometre starter først efter lyd 3-5 færdige
   bool _gameWinRecorded = false;
   _GameCard? _gameOverStrongestCard; // Stærkeste alfamon til game over-skærm
   bool _gameOverKidWon = false;
+  String? _computerMatchId; // Gemt match-id for persistence
 
   final _random = Random();
+  late final AudioPlayer _audioPlayer;
+
+  Future<void> _safeSaveMatchState() async {
+    try {
+      await _saveComputerMatchState().timeout(const Duration(seconds: 2));
+    } catch (_) {}
+  }
+
+  Future<void> _safeCompleteMatch() async {
+    try {
+      await _completeComputerMatch().timeout(const Duration(seconds: 2));
+    } catch (_) {}
+  }
 
   @override
   void initState() {
     super.initState();
+    _audioPlayer = AudioPlayer();
+    _audioPlayer.setPlayerMode(PlayerMode.mediaPlayer);
+    _audioPlayer.audioCache.prefix = '';
+    _initAudio();
     _loadCards();
+  }
+
+  Future<void> _initAudio() async {
+    try {
+      await _audioPlayer.setAudioContext(AudioContext(
+        iOS: AudioContextIOS(
+          category: AVAudioSessionCategory.playback,
+          options: {AVAudioSessionOptions.mixWithOthers},
+        ),
+      ));
+    } catch (e) {
+      if (kDebugMode) debugPrint('Audio init: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  static const _vaelgevne = 'Vaelgevne.mp3';
+  static const _modstandervaelgerevne = 'Modstandervaelgerevne.mp3';
+  static const _duvinder = 'Duvinder.mp3';
+  static const _modstanderenvinder = 'Modstanderenvinder.mp3';
+  static const _rising = 'rising.mp3';
+
+  /// Asset path – bruger standard assets/ prefix.
+  String _assetPath(String file) => 'assets/$file';
+
+  /// 1–2: Afspiller evne-valg-lyd (dig eller modstander).
+  Future<void> _playAbilityChoiceSound(bool kidChooses) async {
+    try {
+      await _audioPlayer.stop();
+      final file = kidChooses ? _vaelgevne : _modstandervaelgerevne;
+      final path = _assetPath(file);
+      _audioPlayer.play(AssetSource(path));
+      try {
+        await _audioPlayer.onPlayerComplete.first
+            .timeout(const Duration(seconds: 12));
+      } on TimeoutException {
+        // Fortsæt flowet hvis completion-event mangler.
+      }
+    } catch (e) {
+      if (kDebugMode) debugPrint('PlayAbilityChoice: $e');
+    }
+  }
+
+
+  void _playRisingSound() {
+    _audioPlayer.play(AssetSource(_assetPath(_rising)));
+  }
+
+  void _stopRisingSound() {
+    _audioPlayer.stop();
+  }
+
+  /// Afspiller vinder/taber-lyd (Duvinder / Modstanderenvinder).
+  void _playRoundResultSound(String winner) {
+    if (winner == 'tie') return;
+    final file = winner == 'kid' ? _duvinder : _modstanderenvinder;
+    _audioPlayer.stop();
+    _audioPlayer.play(AssetSource(_assetPath(file)));
   }
 
   Future<void> _loadCards() async {
@@ -121,12 +215,109 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
     final shuffled = List<_GameCard>.from(cards)..shuffle(_random);
 
     if (!mounted) return;
+
+    if (widget.computerMatchId != null) {
+      final res = await Supabase.instance.client
+          .from('kid_computer_matches')
+          .select('game_state')
+          .eq('id', widget.computerMatchId!)
+          .eq('kid_id', widget.kidId)
+          .eq('status', 'in_progress')
+          .maybeSingle();
+      if (res != null && mounted) {
+        setState(() => _computerMatchId = widget.computerMatchId);
+        final state = res['game_state'] as Map<String, dynamic>?;
+        if (state != null && state.isNotEmpty) {
+          _restoreFromState(state, shuffled);
+          return;
+        }
+      }
+    }
+
     setState(() {
       _kidCards = shuffled;
       _computerCards = List<_GameCard>.from(shuffled)
         ..shuffle(_random);
       _loading = false;
     });
+
+    if (widget.computerMatchId == null && mounted) {
+      _createComputerMatch();
+    }
+  }
+
+  void _restoreFromState(Map<String, dynamic> state, List<_GameCard> allCards) {
+    // Forenklet gendannelse – fuld persistence kræver kort-serialisering
+    final kidScore = state['kidScore'] as int? ?? 0;
+    final computerScore = state['computerScore'] as int? ?? 0;
+    final roundNumber = state['roundNumber'] as int? ?? 0;
+    setState(() {
+      _kidCards = List<_GameCard>.from(allCards)..shuffle(_random);
+      _computerCards = List<_GameCard>.from(allCards)..shuffle(_random);
+      _kidScore = kidScore;
+      _computerScore = computerScore;
+      _roundNumber = roundNumber;
+      _loading = false;
+    });
+  }
+
+  Future<void> _createComputerMatch() async {
+    try {
+      final res = await Supabase.instance.client
+          .from('kid_computer_matches')
+          .insert({
+            'kid_id': widget.kidId,
+            'status': 'in_progress',
+            'game_state': {},
+          })
+          .select('id')
+          .single();
+      if (mounted) setState(() => _computerMatchId = res['id'] as String?);
+    } catch (e) {
+      if (mounted && kDebugMode) debugPrint('_createComputerMatch: $e');
+    }
+  }
+
+  Future<void> _saveComputerMatchState() async {
+    final id = _computerMatchId ?? widget.computerMatchId;
+    if (id == null) return;
+    await Supabase.instance.client
+        .from('kid_computer_matches')
+        .update({
+          'game_state': {
+            'kidScore': _kidScore,
+            'computerScore': _computerScore,
+            'roundNumber': _roundNumber,
+          },
+          'updated_at': DateTime.now().toUtc().toIso8601String(),
+        })
+        .eq('id', id)
+        .eq('kid_id', widget.kidId);
+  }
+
+  Future<void> _completeComputerMatch() async {
+    try {
+      // Luk ALLE igangværende computerspil for barnet for at undgå gamle/stale
+      // in_progress-rækker, der ellers kan få spillet til at se "ikke afsluttet" ud.
+      await Supabase.instance.client
+          .from('kid_computer_matches')
+          .update({
+            'status': 'completed',
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('kid_id', widget.kidId)
+          .eq('status', 'in_progress');
+      if (mounted) {
+        setState(() => _computerMatchId = null);
+      }
+    } catch (e) {
+      if (mounted) {
+        if (kDebugMode) debugPrint('_completeComputerMatch: $e');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Kunne ikke afslutte: $e')),
+        );
+      }
+    }
   }
 
   Future<List<_GameCard>> _loadCardsForAvatars(
@@ -172,7 +363,7 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
           .map((s) => _Strength(
                 strengthIndex: s['strength_index'] as int,
                 name: s['name'] as String? ?? '',
-                value: s['value'] as int? ?? 0,
+                value: _parseStrengthValue(s['value']),
               ))
           .toList();
 
@@ -240,7 +431,7 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
           .map((s) => _Strength(
                 strengthIndex: s['strength_index'] as int,
                 name: s['name'] as String? ?? '',
-                value: s['value'] as int? ?? 0,
+                value: _parseStrengthValue(s['value']),
               ))
           .toList();
 
@@ -301,26 +492,30 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
     });
   }
 
-  void _kidPlayCard() {
+  void _kidPlayCard({int? cardIndex}) {
     if (_gameState != 'idle' || _kidCards.isEmpty) return;
     if (_computerCards.isEmpty) {
       _endGame();
       return;
     }
 
-    final card = _kidCards.first;
+    final index = cardIndex ?? 0;
+    if (index < 0 || index >= _kidCards.length) return;
+
+    final card = _kidCards[index];
     final compCard = _computerCards.first;
 
     final kidChooses = _previousRoundWinner == null || _previousRoundWinner == 'kid' || _previousRoundWinner == 'tie';
 
     if (kidChooses) {
       setState(() {
-        _kidCards.removeAt(0);
+        _kidCards.removeAt(index);
         _computerCards.removeAt(0);
         _kidCard = card;
         _computerCard = compCard;
         _gameState = 'choosing_strength';
       });
+      _playAbilityChoiceSound(true);
     } else {
       // Modstanderen vandt forrige runde – de bestemmer evnen. Vælger altid stærkeste evne.
       final compStrengths = compCard.strengths;
@@ -330,17 +525,16 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
       final compStrengthIndex = strongest?.strengthIndex ?? 0;
 
       setState(() {
-        _kidCards.removeAt(0);
+        _kidCards.removeAt(index);
         _computerCards.removeAt(0);
         _kidCard = card;
         _computerCard = compCard;
         _selectedStrengthIndex = compStrengthIndex;
         _gameState = 'round_result';
+        _barometersReady = false;
       });
-
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (!mounted) return;
-        _resolveRound(compCard, compStrengthIndex);
+      _playAbilityChoiceSound(false).then((_) {
+        if (mounted) setState(() => _barometersReady = true);
       });
     }
   }
@@ -351,11 +545,7 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
     setState(() {
       _selectedStrengthIndex = index;
       _gameState = 'round_result';
-    });
-
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (!mounted) return;
-      _resolveRound(_computerCard!, index);
+      _barometersReady = true;
     });
   }
 
@@ -381,6 +571,7 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
     }
 
     setState(() => _roundWinner = winner);
+    _playRoundResultSound(winner);
   }
 
   void _applyRoundResult(String winner, _GameCard compCard) {
@@ -437,6 +628,14 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
       _selectedStrengthIndex = null;
       _roundWinner = null;
       _gameState = 'idle';
+      _barometersReady = false;
+    });
+
+    // Træk næste kort automatisk – kun når bunken bestemmer (> 3 kort)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _kidCards.isNotEmpty && _computerCards.isNotEmpty && _kidCards.length > 3) {
+        _kidPlayCard();
+      }
     });
   }
 
@@ -451,6 +650,8 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
       _gameOverStrongestCard = strongest;
       _gameOverKidWon = kidWon;
     });
+
+    _completeComputerMatch();
 
     if (kidWon && !_gameWinRecorded) {
       _gameWinRecorded = true;
@@ -485,13 +686,63 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
               children: [
                 Padding(
                   padding: const EdgeInsets.all(16),
-                  child: Text(
-                    'Spil',
-                    style: TextStyle(
-                      fontSize: isTablet ? 28 : 24,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                    ),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.home, color: Colors.white),
+                        onPressed: () {
+                          final router = GoRouter.of(context);
+                          if (_computerMatchId != null || widget.computerMatchId != null) {
+                            unawaited(_safeSaveMatchState());
+                          }
+                          router.go('/kid/spil/${widget.kidId}');
+                        },
+                        tooltip: 'Hjem',
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close, color: Colors.white),
+                        onPressed: () async {
+                          final router = GoRouter.of(context);
+                          final doIt = await showDialog<bool>(
+                            context: context,
+                            useRootNavigator: true,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Afslut spil?'),
+                              content: const Text(
+                                'Vil du afslutte spillet mod computeren?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('Annuller'),
+                                ),
+                                FilledButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text('Afslut'),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (doIt != true || !context.mounted) return;
+                          unawaited(_safeSaveMatchState());
+                          unawaited(_safeCompleteMatch());
+                          router.go('/kid/spil/${widget.kidId}');
+                        },
+                        tooltip: 'Afslut',
+                      ),
+                      Expanded(
+                        child: Text(
+                          'Spil mod computer',
+                          style: TextStyle(
+                            fontSize: isTablet ? 28 : 24,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      const SizedBox(width: 48),
+                    ],
                   ),
                 ),
                 Expanded(
@@ -499,13 +750,12 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
                       ? const Center(
                           child: CircularProgressIndicator(color: Colors.white),
                         )
-                      : _kidCards.isEmpty
-                          ? _buildNoCards()
-                          : _gameState == 'game_over'
-                              ? _buildGameOver()
+                      : _gameState == 'game_over'
+                          ? _buildGameOver()
+                          : _kidCards.isEmpty
+                              ? _buildNoCards()
                               : _buildGame(),
                 ),
-                _buildBottomNav(context, widget.kidId),
               ],
             ),
           ),
@@ -558,13 +808,13 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
           if (strongest != null) ...[
             _GameOverAlfamon(
               card: strongest,
-              message: kidWon ? 'Du vandt!' : 'Du tabte',
+              message: kidWon ? 'Du vandt!' : 'Du tabte!',
               kidWon: kidWon,
             ),
             const SizedBox(height: 24),
           ] else ...[
             Text(
-              kidWon ? 'Du vandt!' : 'Du tabte',
+              kidWon ? 'Du vandt!' : 'Du tabte!',
               style: const TextStyle(
                 fontSize: 32,
                 fontWeight: FontWeight.w900,
@@ -692,23 +942,46 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
                   _ScoreCard(label: 'Computer', score: _computerScore),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Expanded(
-                      child: _DuelAngrebTile(
-                        card: kidCard,
+                      child: DuelAngrebTile(
+                        name: kidCard.name,
+                        stageIndex: kidCard.stageIndex,
+                        letter: kidCard.letter,
                         faceRight: _angrebImagesFaceRight,
                         strengthName: selectedStrength?.name,
+                        powerValue: selectedStrength?.value ?? 0,
+                        barometerOnRight: true,
+                        animationDelayMs: 0,
+                        barometersReady: _barometersReady,
+                        onBarometerStart: _playRisingSound,
+                        onBarometerComplete: _stopRisingSound,
                       ),
                     ),
                     Expanded(
-                      child: _DuelAngrebTile(
-                        card: computerCard,
+                      child: DuelAngrebTile(
+                        name: computerCard.name,
+                        stageIndex: computerCard.stageIndex,
+                        letter: computerCard.letter,
                         faceRight: !_angrebImagesFaceRight,
                         strengthName: selectedStrength?.name,
+                        powerValue: computerCard.strengths
+                            .where((s) => s.strengthIndex == _selectedStrengthIndex)
+                            .firstOrNull?.value ?? 0,
+                        barometerOnRight: false,
+                        animationDelayMs: 1200,
+                        barometersReady: _barometersReady,
+                        onBarometerStart: _playRisingSound,
+                        onBarometerComplete: () {
+                          _stopRisingSound();
+                          if (_computerCard != null && _selectedStrengthIndex != null) {
+                            _resolveRound(_computerCard!, _selectedStrengthIndex!);
+                          }
+                        },
                       ),
                     ),
                   ],
@@ -732,7 +1005,7 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
                             : Colors.amber,
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 8),
                 FilledButton.icon(
                   onPressed: () => _applyRoundResult(_roundWinner!, _computerCard!),
                   icon: const Icon(Icons.sports_martial_arts),
@@ -740,12 +1013,12 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
                   style: FilledButton.styleFrom(
                     backgroundColor: const Color(0xFFF9C433),
                     foregroundColor: Colors.black87,
-                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
-                    textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                 ),
               ],
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
             ],
           ),
         ),
@@ -827,6 +1100,37 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
     return sorted;
   }
 
+  /// Viser kort forstørret i dialog så man kan se evner osv.
+  void _showCardDetail(_GameCard card) {
+    showDialog(
+      context: context,
+      barrierColor: Colors.black54,
+      barrierDismissible: true,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
+        child: Stack(
+          alignment: Alignment.topRight,
+          children: [
+            Center(
+              child: AlfamonCard(
+                card: card.toAlfamonCardData(),
+                width: 220,
+              ),
+            ),
+            IconButton(
+              onPressed: () => Navigator.pop(ctx),
+              icon: const Icon(Icons.close, color: Colors.white, size: 28),
+              style: IconButton.styleFrom(
+                backgroundColor: Colors.black45,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   /// Før start: vis alle kort i rækkefølge a-å (undtagen æg)
   Widget _buildCardPreview() {
     final sorted = _cardsSortedByLetter(_kidCards);
@@ -853,10 +1157,13 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
               spacing: 8,
               runSpacing: 8,
               alignment: WrapAlignment.center,
-              children: sorted.map((c) => AlfamonCard(
+              children: sorted.map((c) => GestureDetector(
+              onTap: () => _showCardDetail(c),
+              child: AlfamonCard(
                 card: c.toAlfamonCardData(),
                 width: _gameCardWidth,
-              )).toList(),
+              ),
+            )).toList(),
             ),
           ),
         ),
@@ -898,6 +1205,11 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
       return _buildCardPreview();
     }
 
+    // 3 eller færre kort: vis alle midt på skærmen, vælg hvilket kort man vil spille
+    if (_kidCards.length <= 3) {
+      return _buildCardChoiceLayout();
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Stack(
@@ -934,9 +1246,33 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
             ),
           ),
           Positioned(
+            top: 56,
+            right: 8,
+            child: Text(
+              '${_computerCards.length} kort',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: Colors.white.withValues(alpha: 0.9),
+              ),
+            ),
+          ),
+          Positioned(
             bottom: 100,
             left: 0,
             child: _buildPlayerPile(_gameCardWidth, stackOffset),
+          ),
+          Positioned(
+            bottom: 92,
+            left: 0,
+            child: Text(
+              '${_kidCards.length} kort',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: Colors.white.withValues(alpha: 0.9),
+              ),
+            ),
           ),
           Positioned(
             bottom: 24,
@@ -955,13 +1291,91 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                   ),
                 ),
-                const SizedBox(height: 4),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Når 3 eller færre kort: vis alle midt på skærmen, vælg hvilket kort at spille.
+  Widget _buildCardChoiceLayout() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _ScoreCard(label: 'Dig', score: _kidScore),
                 Text(
-                  '${_kidCards.length} kort i bunken',
+                  'Runde $_roundNumber',
                   style: TextStyle(
                     fontSize: 14,
-                    color: Colors.white.withValues(alpha: 0.8),
+                    color: Colors.white.withValues(alpha: 0.9),
                   ),
+                ),
+                _ScoreCard(label: 'Computer', score: _computerScore),
+              ],
+            ),
+          ),
+          Positioned(
+            top: 0,
+            bottom: 0,
+            right: 0,
+            child: Center(
+              child: SizedBox(
+                width: _gameCardWidth + 20,
+                child: _buildOpponentPile(_gameCardWidth, 4.0),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 56,
+            right: 8,
+            child: Text(
+              '${_computerCards.length} kort',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: Colors.white.withValues(alpha: 0.9),
+              ),
+            ),
+          ),
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Vælg et kort at spille',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white.withValues(alpha: 0.95),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < _kidCards.length; i++) ...[
+                      if (i > 0) const SizedBox(width: 12),
+                      GestureDetector(
+                        onTap: () => _kidPlayCard(cardIndex: i),
+                        child: AlfamonCard(
+                          card: _kidCards[i].toAlfamonCardData(),
+                          width: _gameCardWidth,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
             ),
@@ -974,18 +1388,20 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
   Widget _buildPlayerPile(double cardWidth, double stackOffset) {
     if (_kidCards.isEmpty) return const SizedBox.shrink();
     final topCard = _kidCards.first;
-    final stackCount = _kidCards.length.clamp(0, 8);
+    final count = _kidCards.length;
+    final stackCount = count.clamp(1, 12);
+    final offset = count > 8 ? 3.0 : stackOffset;
 
     return SizedBox(
-      width: cardWidth + (stackCount - 1) * stackOffset + 8,
-      height: AlfamonCard.heightForWidth(cardWidth) + (stackCount - 1) * stackOffset + 8,
+      width: cardWidth + (stackCount - 1) * offset + 8,
+      height: AlfamonCard.heightForWidth(cardWidth) + (stackCount - 1) * offset + 8,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           for (var i = stackCount - 1; i >= 1; i--)
             Positioned(
-              left: i * stackOffset,
-              top: i * stackOffset,
+              left: i * offset,
+              top: i * offset,
               child: AlfamonCardBack(width: cardWidth),
             ),
           Positioned(
@@ -1002,19 +1418,21 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
   }
 
   Widget _buildOpponentPile(double cardWidth, double stackOffset) {
-    final stackCount = _computerCards.length.clamp(0, 8);
-    if (stackCount == 0) return const SizedBox.shrink();
+    final count = _computerCards.length;
+    if (count == 0) return const SizedBox.shrink();
+    final stackCount = count.clamp(1, 12);
+    final offset = count > 8 ? 3.0 : stackOffset;
 
     return SizedBox(
-      width: cardWidth + (stackCount - 1) * stackOffset + 8,
-      height: AlfamonCard.heightForWidth(cardWidth) + (stackCount - 1) * stackOffset + 8,
+      width: cardWidth + (stackCount - 1) * offset + 8,
+      height: AlfamonCard.heightForWidth(cardWidth) + (stackCount - 1) * offset + 8,
       child: Stack(
         clipBehavior: Clip.none,
         children: [
           for (var i = 0; i < stackCount; i++)
             Positioned(
-              left: i * stackOffset,
-              top: i * stackOffset,
+              left: i * offset,
+              top: i * offset,
               child: AlfamonCardBack(width: cardWidth),
             ),
         ],
@@ -1053,6 +1471,12 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
                   onTap: () => context.go('/kid/library/$kidId'),
                 ),
                 _NavItem(
+                  icon: Icons.pets,
+                  label: 'Alfamons',
+                  selected: false,
+                  onTap: () => context.go('/kid/alfamons/$kidId'),
+                ),
+                _NavItem(
                   icon: Icons.sports_esports,
                   label: 'Spil',
                   selected: true,
@@ -1068,8 +1492,10 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
           ),
           TextButton(
             onPressed: () async {
-              await context.read<AuthProvider>().signOut();
-              if (context.mounted) context.go('/auth');
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('kidId');
+              await prefs.remove('kidStayLoggedIn');
+              if (context.mounted) context.go('/kid/select');
             },
             child: const Text(
               'Log ud',
@@ -1077,93 +1503,6 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Viser angreb-figur. faceRight: true = vis uden flip, false = flip horisontalt.
-class _DuelAngrebTile extends StatelessWidget {
-  final _GameCard? card;
-  final bool faceRight;
-  final String? strengthName;
-
-  const _DuelAngrebTile({
-    required this.card,
-    required this.faceRight,
-    this.strengthName,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    if (card == null) {
-      return const SizedBox.shrink();
-    }
-
-    final path = AngrebAssets.getAngrebAssetPath(
-      card!.name,
-      card!.stageIndex,
-      letter: card!.letter,
-    );
-
-    Widget imageWidget;
-    if (path != null) {
-      imageWidget = Image.asset(
-        path,
-        fit: BoxFit.contain,
-        errorBuilder: (_, __, ___) => _placeholder(card!.name),
-      );
-    } else {
-      imageWidget = _placeholder(card!.name);
-    }
-
-    // Atiachangreb2 vender modsat af de andre – brug override
-    final flipOverride = path != null && path.contains('Atiachangreb2');
-    final shouldFlip = flipOverride ? faceRight : !faceRight;
-    if (shouldFlip) {
-      imageWidget = Transform(
-        alignment: Alignment.center,
-        transform: Matrix4.identity()..scale(-1.0, 1.0),
-        child: imageWidget,
-      );
-    }
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Expanded(
-          child: Center(
-            child: imageWidget,
-          ),
-        ),
-        if (strengthName != null && strengthName!.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(
-            strengthName!,
-            style: const TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
-              shadows: [
-                Shadow(color: Colors.black54, offset: Offset(1, 1)),
-                Shadow(color: Colors.black38, blurRadius: 4),
-              ],
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ],
-    );
-  }
-
-  Widget _placeholder(String name) {
-    return Container(
-      color: Colors.white12,
-      child: Center(
-        child: Text(
-          name,
-          style: TextStyle(color: Colors.white70, fontSize: 14),
-        ),
       ),
     );
   }

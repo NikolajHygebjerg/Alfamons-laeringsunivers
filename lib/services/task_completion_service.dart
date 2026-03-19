@@ -161,8 +161,10 @@ class TaskCompletionService {
 
             for (var i = 0; i < stages.length - 1; i++) {
               final stageIdx = (stages[i] as Map)['stage_index'] as int;
-              final pointsNeeded =
-                  (pointsPerStage[stageIdx.toString()] as num?)?.toInt() ?? 10;
+              final raw = pointsPerStage[stageIdx.toString()] ??
+                  pointsPerStage[stageIdx];
+              var pointsNeeded = (raw as num?)?.toInt() ?? 10;
+              if (pointsNeeded < 1) pointsNeeded = 10;
               if (workingBalance >= pointsAccumulated + pointsNeeded) {
                 pointsAccumulated += pointsNeeded;
                 currentStage = (stages[i + 1] as Map)['stage_index'] as int;
@@ -191,10 +193,7 @@ class TaskCompletionService {
                 'avatar_id': avatarId,
                 'total_points': workingBalance,
               });
-              await _client
-                  .from('kid_active_avatar')
-                  .update({'avatar_id': null, 'points_current': 0})
-                  .eq('kid_id', kidId);
+              // Behold aktiv Alfamon – barnet vælger selv ny i biblioteket
             }
           }
         }
@@ -203,6 +202,383 @@ class TaskCompletionService {
 
     return CompleteResult(points: points, dailyBonus: dailyBonus);
   }
+
+  /// Godkender en opgave (needs_approval -> approved) og tildeler point.
+  /// Kræver at forældrekoden matcher.
+  static Future<ApproveResult> approve({
+    required String taskInstanceId,
+    required String kidId,
+    required String parentCode,
+  }) async {
+    final instanceRes = await _client
+        .from('task_instances')
+        .select('id,status,task_id')
+        .eq('id', taskInstanceId)
+        .single();
+
+    if (instanceRes['status'] != 'needs_approval') {
+      throw Exception('Opgaven kan ikke godkendes');
+    }
+
+    final settingsRes = await _client
+        .from('settings')
+        .select('value')
+        .eq('key', 'approval_code')
+        .maybeSingle();
+
+    final storedCode = settingsRes?['value'] as String? ?? '';
+    if (storedCode.isEmpty || parentCode.trim() != storedCode.trim()) {
+      throw Exception('Forkert forældrekode');
+    }
+
+    final completionRes = await _client
+        .from('task_completions')
+        .select('id,points_awarded')
+        .eq('task_instance_id', taskInstanceId)
+        .maybeSingle();
+
+    if (completionRes == null) {
+      throw Exception('Ingen fuldførelse fundet');
+    }
+
+    final points = completionRes['points_awarded'] as int? ?? 0;
+
+    await _client
+        .from('task_instances')
+        .update({'status': 'approved'})
+        .eq('id', taskInstanceId);
+
+    int? dailyBonus;
+    final activeRes = await _client
+        .from('kid_active_avatar')
+        .select('avatar_id,points_current')
+        .eq('kid_id', kidId)
+        .maybeSingle();
+
+    if (activeRes != null && activeRes['avatar_id'] != null && points > 0) {
+      final avatarId = activeRes['avatar_id'] as String;
+
+      final unlocked = await _client
+          .from('kid_unlocked_alphamons')
+          .select('id')
+          .eq('kid_id', kidId)
+          .eq('avatar_id', avatarId)
+          .maybeSingle();
+
+      if (unlocked == null) {
+        return ApproveResult(points: points, dailyBonus: null);
+      }
+
+      final currentPoints = activeRes['points_current'] as int? ?? 0;
+      int workingBalance = currentPoints + points;
+
+      await _client
+          .from('kid_active_avatar')
+          .update({'points_current': workingBalance})
+          .eq('kid_id', kidId);
+
+      await _client.from('points_ledger').insert({
+        'kid_id': kidId,
+        'source': 'task',
+        'task_completion_id': completionRes['id'],
+        'delta_points': points,
+        'balance_after': workingBalance,
+      });
+
+      final today = DateTime.now().toIso8601String().substring(0, 10);
+      final todayInstances = await _client
+          .from('task_instances')
+          .select('id,status')
+          .eq('kid_id', kidId)
+          .eq('date', today);
+
+      final allCompleted = (todayInstances as List).every((ti) =>
+          ti['status'] == 'completed' || ti['status'] == 'approved');
+      final hasPending =
+          (todayInstances).any((ti) => ti['status'] == 'pending');
+      final hasTasks = todayInstances.isNotEmpty;
+
+      if (allCompleted && !hasPending && hasTasks) {
+        final existingBonus = await _client
+            .from('points_ledger')
+            .select('id')
+            .eq('kid_id', kidId)
+            .eq('source', 'daily_bonus')
+            .gte('created_at', '${today}T00:00:00')
+            .lt('created_at', '${today}T23:59:59')
+            .maybeSingle();
+
+        if (existingBonus == null) {
+          const bonusPoints = 5;
+          workingBalance += bonusPoints;
+          dailyBonus = bonusPoints;
+
+          await _client
+              .from('kid_active_avatar')
+              .update({'points_current': workingBalance})
+              .eq('kid_id', kidId);
+
+          await _client.from('points_ledger').insert({
+            'kid_id': kidId,
+            'source': 'daily_bonus',
+            'task_completion_id': null,
+            'delta_points': bonusPoints,
+            'balance_after': workingBalance,
+          });
+        }
+      }
+
+      final libRes = await _client
+          .from('kid_avatar_library')
+          .select('id,current_stage_index')
+          .eq('kid_id', kidId)
+          .eq('avatar_id', avatarId)
+          .maybeSingle();
+
+      final avatarRes = await _client
+          .from('avatars')
+          .select('points_per_stage')
+          .eq('id', avatarId)
+          .single();
+
+      final stagesRes = await _client
+          .from('avatar_stages')
+          .select('stage_index')
+          .eq('avatar_id', avatarId)
+          .order('stage_index');
+
+      final pointsPerStage =
+          (avatarRes['points_per_stage'] as Map<String, dynamic>?) ?? {};
+      final stages = stagesRes as List;
+
+      if (stages.isNotEmpty) {
+        final maxStage = (stages.last as Map)['stage_index'] as int;
+        int pointsAccumulated = 0;
+        int currentStage = (stages.first as Map)['stage_index'] as int;
+
+        for (var i = 0; i < stages.length - 1; i++) {
+          final stageIdx = (stages[i] as Map)['stage_index'] as int;
+          final raw = pointsPerStage[stageIdx.toString()] ??
+              pointsPerStage[stageIdx];
+          var pointsNeeded = (raw as num?)?.toInt() ?? 10;
+          if (pointsNeeded < 1) pointsNeeded = 10;
+          if (workingBalance >= pointsAccumulated + pointsNeeded) {
+            pointsAccumulated += pointsNeeded;
+            currentStage = (stages[i + 1] as Map)['stage_index'] as int;
+          } else {
+            break;
+          }
+        }
+
+        if (libRes != null) {
+          await _client.from('kid_avatar_library').update({
+            'current_stage_index': currentStage,
+            'points_current': workingBalance,
+          }).eq('id', libRes['id']);
+        } else {
+          await _client.from('kid_avatar_library').insert({
+            'kid_id': kidId,
+            'avatar_id': avatarId,
+            'current_stage_index': currentStage,
+            'points_current': workingBalance,
+          });
+        }
+
+        if (currentStage >= maxStage) {
+          await _client.from('kid_avatar_history').insert({
+            'kid_id': kidId,
+            'avatar_id': avatarId,
+            'total_points': workingBalance,
+          });
+          // Behold aktiv Alfamon – barnet vælger selv ny i biblioteket
+        }
+      }
+    }
+
+    return ApproveResult(points: points, dailyBonus: dailyBonus);
+  }
+
+  /// Tildeler point for læst bog. Kræver forældrekode. 1 point pr. side.
+  static Future<BookPointsResult> awardBookPoints({
+    required String kidId,
+    required int points,
+    required String parentCode,
+  }) async {
+    final settingsRes = await _client
+        .from('settings')
+        .select('value')
+        .eq('key', 'approval_code')
+        .maybeSingle();
+
+    final storedCode = settingsRes?['value'] as String? ?? '';
+    if (storedCode.isEmpty || parentCode.trim() != storedCode.trim()) {
+      throw Exception('Forkert forældrekode');
+    }
+
+    if (points < 1) {
+      return BookPointsResult(points: 0, dailyBonus: null);
+    }
+
+    int? dailyBonus;
+    final activeRes = await _client
+        .from('kid_active_avatar')
+        .select('avatar_id,points_current')
+        .eq('kid_id', kidId)
+        .maybeSingle();
+
+    if (activeRes != null && activeRes['avatar_id'] != null) {
+      final avatarId = activeRes['avatar_id'] as String;
+
+      final unlocked = await _client
+          .from('kid_unlocked_alphamons')
+          .select('id')
+          .eq('kid_id', kidId)
+          .eq('avatar_id', avatarId)
+          .maybeSingle();
+
+      if (unlocked != null) {
+        final currentPoints = activeRes['points_current'] as int? ?? 0;
+        int workingBalance = currentPoints + points;
+
+        await _client
+            .from('kid_active_avatar')
+            .update({'points_current': workingBalance})
+            .eq('kid_id', kidId);
+
+        await _client.from('points_ledger').insert({
+          'kid_id': kidId,
+          'source': 'book',
+          'task_completion_id': null,
+          'delta_points': points,
+          'balance_after': workingBalance,
+        });
+
+        final today = DateTime.now().toIso8601String().substring(0, 10);
+        final todayInstances = await _client
+            .from('task_instances')
+            .select('id,status')
+            .eq('kid_id', kidId)
+            .eq('date', today);
+
+        final allCompleted = (todayInstances as List).every((ti) =>
+            ti['status'] == 'completed' || ti['status'] == 'approved');
+        final hasPending =
+            (todayInstances).any((ti) => ti['status'] == 'pending');
+        final hasTasks = todayInstances.isNotEmpty;
+
+        if (allCompleted && !hasPending && hasTasks) {
+          final existingBonus = await _client
+              .from('points_ledger')
+              .select('id')
+              .eq('kid_id', kidId)
+              .eq('source', 'daily_bonus')
+              .gte('created_at', '${today}T00:00:00')
+              .lt('created_at', '${today}T23:59:59')
+              .maybeSingle();
+
+          if (existingBonus == null) {
+            const bonusPoints = 5;
+            workingBalance += bonusPoints;
+            dailyBonus = bonusPoints;
+
+            await _client
+                .from('kid_active_avatar')
+                .update({'points_current': workingBalance})
+                .eq('kid_id', kidId);
+
+            await _client.from('points_ledger').insert({
+              'kid_id': kidId,
+              'source': 'daily_bonus',
+              'task_completion_id': null,
+              'delta_points': bonusPoints,
+              'balance_after': workingBalance,
+            });
+          }
+        }
+
+        final libRes = await _client
+            .from('kid_avatar_library')
+            .select('id,current_stage_index')
+            .eq('kid_id', kidId)
+            .eq('avatar_id', avatarId)
+            .maybeSingle();
+
+        final avatarRes = await _client
+            .from('avatars')
+            .select('points_per_stage')
+            .eq('id', avatarId)
+            .single();
+
+        final stagesRes = await _client
+            .from('avatar_stages')
+            .select('stage_index')
+            .eq('avatar_id', avatarId)
+            .order('stage_index');
+
+        final pointsPerStage =
+            (avatarRes['points_per_stage'] as Map<String, dynamic>?) ?? {};
+        final stages = stagesRes as List;
+
+        if (stages.isNotEmpty) {
+          final maxStage = (stages.last as Map)['stage_index'] as int;
+          int pointsAccumulated = 0;
+          int currentStage = (stages.first as Map)['stage_index'] as int;
+
+          for (var i = 0; i < stages.length - 1; i++) {
+            final stageIdx = (stages[i] as Map)['stage_index'] as int;
+            final raw = pointsPerStage[stageIdx.toString()] ??
+                pointsPerStage[stageIdx];
+            var pointsNeeded = (raw as num?)?.toInt() ?? 10;
+            if (pointsNeeded < 1) pointsNeeded = 10;
+            if (workingBalance >= pointsAccumulated + pointsNeeded) {
+              pointsAccumulated += pointsNeeded;
+              currentStage = (stages[i + 1] as Map)['stage_index'] as int;
+            } else {
+              break;
+            }
+          }
+
+          if (libRes != null) {
+            await _client.from('kid_avatar_library').update({
+              'current_stage_index': currentStage,
+              'points_current': workingBalance,
+            }).eq('id', libRes['id']);
+          } else {
+            await _client.from('kid_avatar_library').insert({
+              'kid_id': kidId,
+              'avatar_id': avatarId,
+              'current_stage_index': currentStage,
+              'points_current': workingBalance,
+            });
+          }
+
+          if (currentStage >= maxStage) {
+            await _client.from('kid_avatar_history').insert({
+              'kid_id': kidId,
+              'avatar_id': avatarId,
+              'total_points': workingBalance,
+            });
+          }
+        }
+      }
+    }
+
+    return BookPointsResult(points: points, dailyBonus: dailyBonus);
+  }
+}
+
+class BookPointsResult {
+  final int points;
+  final int? dailyBonus;
+
+  BookPointsResult({required this.points, this.dailyBonus});
+}
+
+class ApproveResult {
+  final int points;
+  final int? dailyBonus;
+
+  ApproveResult({required this.points, this.dailyBonus});
 }
 
 class CompleteResult {

@@ -2,9 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/task.dart';
-import '../../providers/auth_provider.dart';
 import '../../services/task_completion_service.dart';
 import 'widgets/current_avatar.dart';
 
@@ -83,6 +83,7 @@ class _KidTodayScreenState extends State<KidTodayScreen> {
         .eq('kid_id', widget.kidId)
         .order('due_time', ascending: true, nullsFirst: false);
 
+    if (!mounted) return;
     setState(() {
       _instances = (res as List)
           .map((e) => TaskInstance.fromJson(Map<String, dynamic>.from(e)))
@@ -93,6 +94,10 @@ class _KidTodayScreenState extends State<KidTodayScreen> {
 
   Future<void> _complete(TaskInstance ti, GlobalKey key) async {
     if (ti.status != 'pending') return;
+
+    final codeOk = await _showParentCodeDialog();
+    if (codeOk != true || !mounted) return;
+
     setState(() => _completingId = ti.id);
 
     try {
@@ -187,18 +192,46 @@ class _KidTodayScreenState extends State<KidTodayScreen> {
     );
   }
 
-  List<TaskInstance> get _uniquePendingTasks {
-    final seen = <String>{};
-    return _instances.where((ti) {
-      if (ti.status != 'pending') return false;
-      if (seen.contains(ti.taskId)) return false;
-      seen.add(ti.taskId);
-      return true;
-    }).toList();
+  /// Viser dialog til forældrekode (4 tegn). Returnerer true hvis koden er korrekt.
+  Future<bool> _showParentCodeDialog() async {
+    final storedRes = await Supabase.instance.client
+        .from('settings')
+        .select('value')
+        .eq('key', 'approval_code')
+        .maybeSingle();
+    final storedCode = (storedRes?['value'] as String?)?.trim() ?? '';
+    if (storedCode.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Forældrekode er ikke sat. Sæt den i Admin → Indstillinger.')),
+        );
+      }
+      return false;
+    }
+
+    final code = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const _ParentCodeDialog(),
+    );
+    if (code == null) return false;
+    if (code.trim() != storedCode) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Forkert forældrekode')),
+        );
+      }
+      return false;
+    }
+    return true;
   }
 
+  /// Kun pending – brugte opgaver (completed/needs_approval) forsvinder fra oversigten
+  List<TaskInstance> get _pendingTasks =>
+      _instances.where((ti) => ti.status == 'pending').toList();
+
   Widget _buildTasksSection() {
-    final tasks = _uniquePendingTasks;
+    final tasks = _pendingTasks;
     if (tasks.isEmpty) {
       return Center(
         child: Text(
@@ -264,6 +297,12 @@ class _KidTodayScreenState extends State<KidTodayScreen> {
                   onTap: () => context.go('/kid/library/${widget.kidId}'),
                 ),
                 _NavItem(
+                  icon: Icons.pets,
+                  label: 'Alfamons',
+                  selected: false,
+                  onTap: () => context.go('/kid/alfamons/${widget.kidId}'),
+                ),
+                _NavItem(
                   icon: Icons.sports_esports,
                   label: 'Spil',
                   selected: false,
@@ -280,8 +319,9 @@ class _KidTodayScreenState extends State<KidTodayScreen> {
           ),
           TextButton(
             onPressed: () async {
-              await context.read<AuthProvider>().signOut();
-              if (context.mounted) context.go('/auth');
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.remove('kidId');
+              if (context.mounted) context.go('/kid/select');
             },
             child: const Text(
               'Log ud',
@@ -573,5 +613,76 @@ class _TaskCard extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Dialog til indtastning af forældrekode (4 tegn) ved færdiggørelse af opgave.
+class _ParentCodeDialog extends StatefulWidget {
+  const _ParentCodeDialog();
+
+  @override
+  State<_ParentCodeDialog> createState() => _ParentCodeDialogState();
+}
+
+class _ParentCodeDialogState extends State<_ParentCodeDialog> {
+  final _controller = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Forældrekode'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Bed en voksen om at indtaste forældrekoden for at færdiggøre opgaven.',
+            style: TextStyle(fontSize: 14),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _controller,
+            keyboardType: TextInputType.number,
+            maxLength: 4,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, letterSpacing: 8),
+            decoration: const InputDecoration(
+              hintText: '••••',
+              counterText: '',
+              border: OutlineInputBorder(),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Annuller'),
+        ),
+        FilledButton(
+          onPressed: _controller.text.length == 4 ? _submit : null,
+          style: FilledButton.styleFrom(backgroundColor: const Color(0xFF5A1A0D)),
+          child: const Text('Bekræft'),
+        ),
+      ],
+    );
+  }
+
+  void _submit() {
+    if (_controller.text.length != 4) return;
+    Navigator.of(context).pop(_controller.text);
   }
 }

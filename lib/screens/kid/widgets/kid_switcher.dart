@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class KidInfo {
@@ -52,12 +53,27 @@ class _KidSwitcherState extends State<KidSwitcher> {
           .maybeSingle();
 
       if (active != null && active['avatar_id'] != null) {
-        final points = active['points_current'] as int? ?? 0;
-        final stageIndex = (points / 10).floor().clamp(0, 3);
+        final avatarId = active['avatar_id'] as String;
+        int stageIndex;
+
+        final libRes = await Supabase.instance.client
+            .from('kid_avatar_library')
+            .select('current_stage_index')
+            .eq('kid_id', kid.id)
+            .eq('avatar_id', avatarId)
+            .maybeSingle();
+
+        if (libRes != null && libRes['current_stage_index'] != null) {
+          stageIndex = libRes['current_stage_index'] as int;
+        } else {
+          final points = active['points_current'] as int? ?? 0;
+          stageIndex = await _stageFromPoints(avatarId, points);
+        }
+
         final stage = await Supabase.instance.client
             .from('avatar_stages')
             .select('image_url')
-            .eq('avatar_id', active['avatar_id'])
+            .eq('avatar_id', avatarId)
             .eq('stage_index', stageIndex)
             .maybeSingle();
 
@@ -68,33 +84,89 @@ class _KidSwitcherState extends State<KidSwitcher> {
     }
   }
 
+  Future<int> _stageFromPoints(String avatarId, int points) async {
+    final avatarRes = await Supabase.instance.client
+        .from('avatars')
+        .select('points_per_stage')
+        .eq('id', avatarId)
+        .maybeSingle();
+    final stagesRes = await Supabase.instance.client
+        .from('avatar_stages')
+        .select('stage_index')
+        .eq('avatar_id', avatarId)
+        .order('stage_index');
+
+    final pointsPerStage =
+        (avatarRes?['points_per_stage'] as Map<String, dynamic>?) ?? {};
+    final stages = stagesRes as List;
+    if (stages.isEmpty) return 0;
+
+    int pointsAccumulated = 0;
+    int currentStage = (stages.first as Map)['stage_index'] as int;
+
+    for (var i = 0; i < stages.length - 1; i++) {
+      final stageIdx = (stages[i] as Map)['stage_index'] as int;
+      final raw = pointsPerStage[stageIdx.toString()] ?? pointsPerStage[stageIdx];
+      var pointsNeeded = (raw as num?)?.toInt() ?? 10;
+      if (pointsNeeded < 1) pointsNeeded = 10;
+      if (points >= pointsAccumulated + pointsNeeded) {
+        pointsAccumulated += pointsNeeded;
+        currentStage = (stages[i + 1] as Map)['stage_index'] as int;
+      } else {
+        break;
+      }
+    }
+    return currentStage;
+  }
+
   Future<void> _selectKid(String id) async {
     final kid = widget.kids.firstWhere((k) => k.id == id);
+    bool stayLoggedIn = true;
     if (kid.pinCode != null && kid.pinCode!.isNotEmpty) {
       final controller = TextEditingController();
-      final ok = await showDialog<bool>(
+      bool stayLoggedInValue = true;
+      final result = await showDialog<({bool ok, bool stayLoggedIn})>(
         context: context,
-        builder: (ctx) => AlertDialog(
-          title: const Text('Indtast PIN'),
-          content: TextField(
-            controller: controller,
-            keyboardType: TextInputType.number,
-            maxLength: 4,
-            obscureText: true,
+        builder: (ctx) => StatefulBuilder(
+          builder: (context, setState) => AlertDialog(
+            title: const Text('Indtast PIN'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                TextField(
+                  controller: controller,
+                  keyboardType: TextInputType.number,
+                  maxLength: 4,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    hintText: '4-cifret PIN',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                CheckboxListTile(
+                  value: stayLoggedInValue,
+                  onChanged: (v) => setState(() => stayLoggedInValue = v ?? true),
+                  title: const Text('Forbliv logget ind'),
+                  controlAffinity: ListTileControlAffinity.leading,
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, (ok: false, stayLoggedIn: false)),
+                child: const Text('Annuller'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, (ok: true, stayLoggedIn: stayLoggedInValue)),
+                child: const Text('OK'),
+              ),
+            ],
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Annuller'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('OK'),
-            ),
-          ],
         ),
       );
-      if (ok != true) return;
+      if (result == null || !result.ok) return;
       if (controller.text != kid.pinCode) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -103,7 +175,13 @@ class _KidSwitcherState extends State<KidSwitcher> {
         }
         return;
       }
+      stayLoggedIn = result.stayLoggedIn;
     }
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('kidId', id);
+    await prefs.setBool('kidStayLoggedIn', stayLoggedIn);
+
     if (mounted) {
       context.go('/kid/today/$id');
     }

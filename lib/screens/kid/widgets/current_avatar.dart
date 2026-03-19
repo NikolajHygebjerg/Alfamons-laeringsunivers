@@ -147,8 +147,9 @@ class _CurrentAvatarState extends State<CurrentAvatar> {
 
     for (var i = 0; i < stages.length - 1; i++) {
       final stageIdx = (stages[i] as Map)['stage_index'] as int;
-      final pointsNeeded =
-          (pointsPerStage[stageIdx.toString()] as num?)?.toInt() ?? 10;
+      final raw = pointsPerStage[stageIdx.toString()] ?? pointsPerStage[stageIdx];
+      var pointsNeeded = (raw as num?)?.toInt() ?? 10;
+      if (pointsNeeded < 1) pointsNeeded = 10;
       if (points >= pointsAccumulated + pointsNeeded) {
         pointsAccumulated += pointsNeeded;
         currentStage = (stages[i + 1] as Map)['stage_index'] as int;
@@ -163,7 +164,7 @@ class _CurrentAvatarState extends State<CurrentAvatar> {
   Widget build(BuildContext context) {
     if (!_hasAvatar) {
       return GestureDetector(
-        onTap: () => context.go('/kid/library/${widget.kidId}'),
+        onTap: () => context.go('/kid/alfamons/${widget.kidId}'),
         child: Container(
           padding: const EdgeInsets.all(24),
           margin: const EdgeInsets.all(16),
@@ -208,7 +209,7 @@ class _CurrentAvatarState extends State<CurrentAvatar> {
         .clamp(80.0, 400.0);
 
     return GestureDetector(
-      onTap: () => context.go('/kid/library/${widget.kidId}'),
+      onTap: () => context.go('/kid/alfamons/${widget.kidId}'),
       child: SizedBox(
         width: imageSize + sidePadding * 2,
         child: Container(

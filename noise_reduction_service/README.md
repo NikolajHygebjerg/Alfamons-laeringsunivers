@@ -1,6 +1,11 @@
-# Audio Noise Reduction Service
+# Audio Noise Reduction Service (Production)
 
 Server-side støjreduktion for lydfiler i lydbiblioteket. Bruger FFmpeg's `afftdn`-filter.
+
+## Endpoints
+
+- `POST /process` – Process audio (kræver Authorization: Bearer API_KEY)
+- `GET /health` – Health check for monitoring
 
 ## Deployment (Railway, Render, Fly.io)
 

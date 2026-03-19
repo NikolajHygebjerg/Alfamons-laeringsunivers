@@ -1,16 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+
+import '../../providers/auth_provider.dart';
+import 'admin_book_builder_screen.dart';
 
 class AdminDashboard extends StatelessWidget {
   const AdminDashboard({super.key});
 
   @override
   Widget build(BuildContext context) {
+    final canAccessBookBuilder = AdminBookBuilderScreen.canAccess(context.watch<AuthProvider>());
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Admin'),
         backgroundColor: const Color(0xFF5A1A0D),
         foregroundColor: Colors.white,
+        actions: [
+          TextButton.icon(
+            onPressed: () => context.go('/'),
+            icon: const Icon(Icons.logout, color: Colors.white, size: 20),
+            label: const Text('Log ud', style: TextStyle(color: Colors.white)),
+          ),
+        ],
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -36,16 +49,35 @@ class AdminDashboard extends StatelessWidget {
               onTap: () => context.push('/admin/tasks'),
             ),
             _AdminTile(
-              icon: Icons.face,
-              title: 'Avatars',
-              subtitle: 'Administrer Alfamon-avatars',
-              onTap: () => context.push('/admin/avatars'),
+              icon: Icons.store,
+              title: 'Bogbutik',
+              subtitle: 'Køb Læs-let bøger til børnene',
+              onTap: () => context.push('/admin/bogbutik'),
+            ),
+            if (canAccessBookBuilder)
+              _AdminTile(
+                icon: Icons.menu_book,
+                title: 'Bogbuilder',
+                subtitle: 'Byg Læs-let bøger til bogbutikken',
+                onTap: () => context.push('/admin/book-builder'),
+              ),
+            _AdminTile(
+              icon: Icons.verified_user,
+              title: 'Godkend opgaver',
+              subtitle: 'Godkend opgaver med forældrekode',
+              onTap: () => context.push('/admin/approvals'),
             ),
             _AdminTile(
               icon: Icons.settings,
               title: 'Indstillinger',
-              subtitle: 'App-indstillinger',
+              subtitle: 'App-indstillinger og forældrekode',
               onTap: () => context.push('/admin/settings'),
+            ),
+            _AdminTile(
+              icon: Icons.volume_up,
+              title: 'Lydtest',
+              subtitle: 'Afspil alle tale- og spillyde',
+              onTap: () => context.push('/admin/audio-test'),
             ),
           ],
         ),

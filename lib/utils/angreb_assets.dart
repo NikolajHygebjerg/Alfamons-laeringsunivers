@@ -38,6 +38,7 @@ class AngrebAssets {
   /// Avatar-navn (lowercase) -> asset base
   static const Map<String, String> _nameToAssetBase = {
     'atiach': 'Atiachangreb',
+    'abbas': 'Atiachangreb',
     'aelgor': 'Aelgorangreb',
     'aarmok': 'Aarmokangreb',
     'armok': 'Aarmokangreb',
