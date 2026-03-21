@@ -17,7 +17,7 @@ Eller brug scriptet:
 ```
 
 **Krav:** Du er logget ind på GitHub (`gh auth login` eller SSH-nøgle).  
-Remote hedder her `origin` (fx `github.com/.../isv-rk.git`). Hvis Lektiehelte har et **andet** repo, tilføj:
+Remote `origin` peger på team-repoet (fx `github.com/NikolajHygebjerg/Alfamons_lektiehelte.git`). Til **andet** repo:
 
 ```bash
 git remote add lektiehelte <URL-til-repo>
