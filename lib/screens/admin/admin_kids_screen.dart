@@ -21,10 +21,40 @@ class _AdminKidsScreenState extends State<AdminKidsScreen> {
   }
 
   Future<void> _load() async {
-    final res = await Supabase.instance.client
+    setState(() => _loading = true);
+
+    final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+    if (user == null) {
+      setState(() {
+        _kids = [];
+        _loading = false;
+      });
+      return;
+    }
+
+    final profile = await client
+        .from('profiles')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+    final parentId = profile?['id'] as String?;
+
+    if (parentId == null) {
+      setState(() {
+        _kids = [];
+        _loading = false;
+      });
+      return;
+    }
+
+    final res = await client
         .from('kids')
         .select('id,name,avatar_url,pin_code')
+        .eq('parent_id', parentId)
         .order('created_at');
+
+    if (!mounted) return;
     setState(() {
       _kids = (res as List).map((e) => Kid.fromJson(e)).toList();
       _loading = false;

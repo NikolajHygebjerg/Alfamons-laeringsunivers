@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../services/audio_cache_service.dart';
 import '../../services/task_completion_service.dart';
+import 'widgets/gold_coins_earned_overlay.dart';
 
 /// Bog-læser for Læs-let bøger.
 class KidBookReaderScreen extends StatefulWidget {
@@ -29,6 +30,7 @@ class _KidBookReaderScreenState extends State<KidBookReaderScreen> {
   _TextCase _textCase = _TextCase.sentence;
   Map<String, String> _audioLibrary = {}; // word -> local path
   final AudioPlayer _audioPlayer = AudioPlayer();
+  int? _flashGoldAmount;
 
   @override
   void initState() {
@@ -42,9 +44,16 @@ class _KidBookReaderScreenState extends State<KidBookReaderScreen> {
     super.dispose();
   }
 
-  Future<void> _playWord(String localPath) async {
+  Future<void> _playWord(String path) async {
     await _audioPlayer.stop();
-    await _audioPlayer.setFilePath(localPath);
+    final uri = Uri.tryParse(path);
+    final isNetwork = uri != null &&
+        (uri.scheme == 'http' || uri.scheme == 'https');
+    if (isNetwork) {
+      await _audioPlayer.setUrl(path);
+    } else {
+      await _audioPlayer.setFilePath(path);
+    }
     await _audioPlayer.play();
   }
 
@@ -115,7 +124,9 @@ class _KidBookReaderScreenState extends State<KidBookReaderScreen> {
     if (storedCode.isEmpty) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Forældrekode er ikke sat. Sæt den i Admin → Indstillinger.')),
+          const SnackBar(
+            content: Text('Forældrekode er ikke sat. En voksen skal logge ind som forælder og sætte koden.'),
+          ),
         );
         context.go('/kid/library/${widget.kidId}');
       }
@@ -151,15 +162,27 @@ class _KidBookReaderScreenState extends State<KidBookReaderScreen> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                '🎉 Tillykke! Du fik ${result.dailyBonus} bonus point for at færdiggøre alle opgaver!',
+                '🎉 Du fik ${result.dailyBonus} ekstra guldmønter for at have klaret alle dagens opgaver!',
               ),
             ),
           );
         }
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Du fik ${result.points} point for at læse bogen!')),
+          SnackBar(
+            content: Text(
+              'Du fik ${result.points} guldmønter i kisten for at læse bogen!',
+            ),
+          ),
         );
-        context.go('/kid/library/${widget.kidId}');
+        final gained = result.points + (result.dailyBonus ?? 0);
+        if (gained > 0) {
+          setState(() => _flashGoldAmount = gained);
+          Future.delayed(const Duration(milliseconds: 2800), () {
+            if (mounted) setState(() => _flashGoldAmount = null);
+          });
+          await Future<void>.delayed(const Duration(milliseconds: 2900));
+        }
+        if (mounted) context.go('/kid/library/${widget.kidId}');
       }
     } catch (e) {
       if (mounted) {
@@ -211,6 +234,7 @@ class _KidBookReaderScreenState extends State<KidBookReaderScreen> {
       backgroundColor: const Color(0xFF2C1810),
       body: Stack(
         fit: StackFit.expand,
+        clipBehavior: Clip.none,
         children: [
           if (!_bookOpened)
             _BuildCoverView(coverUrl: coverUrl, title: _title ?? 'Bog', onTap: _openBook)
@@ -243,6 +267,10 @@ class _KidBookReaderScreenState extends State<KidBookReaderScreen> {
               ),
             ),
           ),
+          if (_flashGoldAmount != null)
+            Positioned.fill(
+              child: GoldCoinsEarnedOverlay(amount: _flashGoldAmount!),
+            ),
         ],
       ),
     );

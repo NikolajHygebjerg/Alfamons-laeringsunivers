@@ -3,10 +3,24 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
+import '../../widgets/parent_code_first_setup_dialog.dart';
 import 'admin_book_builder_screen.dart';
 
-class AdminDashboard extends StatelessWidget {
+class AdminDashboard extends StatefulWidget {
   const AdminDashboard({super.key});
+
+  @override
+  State<AdminDashboard> createState() => _AdminDashboardState();
+}
+
+class _AdminDashboardState extends State<AdminDashboard> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ParentCodeFirstSetupDialog.showIfNeeded(context);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -64,13 +78,13 @@ class AdminDashboard extends StatelessWidget {
             _AdminTile(
               icon: Icons.verified_user,
               title: 'Godkend opgaver',
-              subtitle: 'Godkend opgaver med forældrekode',
+              subtitle: 'Godkend afventende opgaver',
               onTap: () => context.push('/admin/approvals'),
             ),
             _AdminTile(
               icon: Icons.settings,
               title: 'Indstillinger',
-              subtitle: 'App-indstillinger og forældrekode',
+              subtitle: 'Konto og app',
               onTap: () => context.push('/admin/settings'),
             ),
             _AdminTile(

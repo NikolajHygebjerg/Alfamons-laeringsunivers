@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 /// Lokale notifikationer til iPad – vises når appen er i baggrunden.
@@ -12,6 +12,10 @@ class NotificationService {
 
   static Future<void> init() async {
     if (_initialized) return;
+    if (kIsWeb) {
+      _initialized = true;
+      return;
+    }
 
     const android = AndroidInitializationSettings('@mipmap/ic_launcher');
     const darwin = DarwinInitializationSettings(
@@ -37,7 +41,7 @@ class NotificationService {
       }
     }
 
-    if (Platform.isIOS) {
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
       await _plugin
           .resolvePlatformSpecificImplementation<
               IOSFlutterLocalNotificationsPlugin>()
@@ -87,6 +91,7 @@ class NotificationService {
     required String challengerKidId,
     required String challengerName,
   }) async {
+    if (kIsWeb) return;
     if (!_initialized) await init();
 
     const android = AndroidNotificationDetails(
@@ -123,6 +128,7 @@ class NotificationService {
     required String title,
     required String body,
   }) async {
+    if (kIsWeb) return;
     if (!_initialized) await init();
 
     const android = AndroidNotificationDetails(

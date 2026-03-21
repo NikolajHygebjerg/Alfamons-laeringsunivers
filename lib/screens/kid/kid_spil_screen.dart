@@ -6,12 +6,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../utils/angreb_assets.dart';
 import '../../utils/card_assets.dart';
 import '../../widgets/duel_angreb_tile.dart';
 import 'widgets/alfamon_card.dart';
+import 'widgets/kid_session_nav_button.dart';
 
 /// Angreb-billeder: true = de kigger til højre i originalen. false = de kigger til venstre.
 /// Skift denne hvis figurerne vender forkert – eller tilret alle billeder til at kigge højre.
@@ -688,16 +688,9 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
                   padding: const EdgeInsets.all(16),
                   child: Row(
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.home, color: Colors.white),
-                        onPressed: () {
-                          final router = GoRouter.of(context);
-                          if (_computerMatchId != null || widget.computerMatchId != null) {
-                            unawaited(_safeSaveMatchState());
-                          }
-                          router.go('/kid/spil/${widget.kidId}');
-                        },
-                        tooltip: 'Hjem',
+                      KidSessionNavButton(
+                        kidId: widget.kidId,
+                        fallbackLocation: '/kid/spil/${widget.kidId}',
                       ),
                       IconButton(
                         icon: const Icon(Icons.close, color: Colors.white),
@@ -1440,72 +1433,6 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
     );
   }
 
-  Widget _buildBottomNav(BuildContext context, String kidId) {
-    return Container(
-      color: Colors.black26,
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-      width: double.infinity,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _NavItem(
-                  icon: Icons.today,
-                  label: 'I dag',
-                  selected: false,
-                  onTap: () => context.go('/kid/today/$kidId'),
-                ),
-                _NavItem(
-                  icon: Icons.calendar_view_week,
-                  label: 'Ugen',
-                  selected: false,
-                  onTap: () => context.go('/kid/week/$kidId'),
-                ),
-                _NavItem(
-                  icon: Icons.library_books,
-                  label: 'Bibliotek',
-                  selected: false,
-                  onTap: () => context.go('/kid/library/$kidId'),
-                ),
-                _NavItem(
-                  icon: Icons.pets,
-                  label: 'Alfamons',
-                  selected: false,
-                  onTap: () => context.go('/kid/alfamons/$kidId'),
-                ),
-                _NavItem(
-                  icon: Icons.sports_esports,
-                  label: 'Spil',
-                  selected: true,
-                ),
-                _NavItem(
-                  icon: Icons.emoji_events,
-                  label: 'Præstationer',
-                  selected: false,
-                  onTap: () => context.go('/kid/achievements/$kidId'),
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: () async {
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.remove('kidId');
-              await prefs.remove('kidStayLoggedIn');
-              if (context.mounted) context.go('/kid/select');
-            },
-            child: const Text(
-              'Log ud',
-              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 /// Viser stærkeste alfamon med taleboble (Du vandt / Du tabte).
@@ -1655,34 +1582,3 @@ extension _FirstOrNull<E> on Iterable<E> {
   E? get firstOrNull => isEmpty ? null : first;
 }
 
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    this.selected = false,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final child = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: selected ? Colors.amber : Colors.white70, size: 28),
-        Text(label, style: TextStyle(color: selected ? Colors.amber : Colors.white70, fontSize: 12)),
-      ],
-    );
-    if (onTap != null) {
-      return GestureDetector(
-        onTap: onTap,
-        child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: child),
-      );
-    }
-    return Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: child);
-  }
-}

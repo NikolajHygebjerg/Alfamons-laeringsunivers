@@ -1,0 +1,57 @@
+import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
+/// Pil / log ud: på barnets **hjem** → vælg barn; ellers `pop` hvis muligt, ellers [fallbackLocation] eller `/kid/today/[kidId]`.
+class KidSessionNavButton extends StatelessWidget {
+  const KidSessionNavButton({
+    super.key,
+    required this.kidId,
+    this.isHome = false,
+    this.fallbackLocation,
+  });
+
+  final String kidId;
+  final bool isHome;
+  /// Bruges når `canPop` er false (fx direkte deep link). Fx `/kid/spil/$kidId`.
+  final String? fallbackLocation;
+
+  void _onPressed(BuildContext context) {
+    if (isHome) {
+      context.go('/kid/select');
+      return;
+    }
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    final fallback = fallbackLocation ?? '/kid/today/$kidId';
+    context.go(fallback);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.black.withValues(alpha: 0.45),
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: IconButton(
+        tooltip: isHome ? 'Vælg barn' : 'Tilbage',
+        icon: isHome
+            ? Transform.flip(
+                flipX: true,
+                child: const Icon(
+                  Icons.logout,
+                  color: Colors.white,
+                  size: 22,
+                ),
+              )
+            : const Icon(
+                Icons.arrow_back,
+                color: Colors.white,
+                size: 22,
+              ),
+        onPressed: () => _onPressed(context),
+      ),
+    );
+  }
+}

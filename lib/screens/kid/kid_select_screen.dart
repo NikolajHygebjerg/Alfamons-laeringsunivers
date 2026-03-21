@@ -23,14 +23,56 @@ class _KidSelectScreenState extends State<KidSelectScreen> {
   }
 
   Future<void> _loadKids() async {
-    final res = await Supabase.instance.client
+    if (mounted) setState(() => _loading = true);
+
+    final client = Supabase.instance.client;
+    final user = client.auth.currentUser;
+    if (user == null) {
+      if (mounted) {
+        setState(() {
+          _kids = [];
+          _loading = false;
+        });
+      }
+      return;
+    }
+
+    final profile = await client
+        .from('profiles')
+        .select('id')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+    final parentId = profile?['id'] as String?;
+
+    if (parentId == null) {
+      if (mounted) {
+        setState(() {
+          _kids = [];
+          _loading = false;
+        });
+      }
+      return;
+    }
+
+    final res = await client
         .from('kids')
         .select('id,name,pin_code,avatar_url')
+        .eq('parent_id', parentId)
         .order('created_at');
+
+    if (!mounted) return;
     setState(() {
       _kids = (res as List).map((e) => Kid.fromJson(e)).toList();
       _loading = false;
     });
+  }
+
+  /// Tilbage til startsiden (vælg admin/barn) – rydder gemt barn-session.
+  Future<void> _logOutToRolePicker() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('kidId');
+    if (!mounted) return;
+    context.go('/');
   }
 
   Future<void> _selectKid(Kid kid) async {
@@ -116,58 +158,88 @@ class _KidSelectScreenState extends State<KidSelectScreen> {
             child: SvgPicture.asset(bgAsset, fit: BoxFit.cover),
           ),
           SafeArea(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator(color: Colors.white))
-                : _kids.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Text(
-                            'Ingen børn tilføjet. Gå til Admin for at tilføje.',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      )
-                    : Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          children: [
-                            const Text(
-                              'Vælg barn',
-                              style: TextStyle(
-                                fontSize: 28,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                              ),
-                            ),
-                            const SizedBox(height: 24),
-                            Expanded(
-                              child: GridView.builder(
-                                gridDelegate:
-                                    SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 6,
-                                  crossAxisSpacing: 8,
-                                  mainAxisSpacing: 8,
-                                  childAspectRatio: 0.85,
-                                ),
-                                itemCount: _kids.length,
-                                itemBuilder: (_, i) {
-                                  final kid = _kids[i];
-                                  return _KidCard(
-                                    kid: kid,
-                                    onLogin: () => _selectKid(kid),
-                                    onAvatarUpdated: _loadKids,
-                                  );
-                                },
-                              ),
-                            ),
-                          ],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _logOutToRolePicker,
+                      icon: const Icon(Icons.logout, color: Colors.white, size: 22),
+                      label: const Text(
+                        'Log ud',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 16,
                         ),
                       ),
+                      style: TextButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: Colors.black.withValues(alpha: 0.25),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: _loading
+                      ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                      : _kids.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(32),
+                                child: Text(
+                                  'Ingen børn tilføjet. Gå til Admin for at tilføje.',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                  ),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            )
+                          : Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                children: [
+                                  const Text(
+                                    'Vælg barn',
+                                    style: TextStyle(
+                                      fontSize: 28,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 24),
+                                  Expanded(
+                                    child: GridView.builder(
+                                      gridDelegate:
+                                          SliverGridDelegateWithFixedCrossAxisCount(
+                                        crossAxisCount: 6,
+                                        crossAxisSpacing: 8,
+                                        mainAxisSpacing: 8,
+                                        childAspectRatio: 0.85,
+                                      ),
+                                      itemCount: _kids.length,
+                                      itemBuilder: (_, i) {
+                                        final kid = _kids[i];
+                                        return _KidCard(
+                                          kid: kid,
+                                          onLogin: () => _selectKid(kid),
+                                          onAvatarUpdated: _loadKids,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -363,110 +435,99 @@ class _KidCard extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Avatar fylder hele feltet – lokale SVG eller netværksbillede
-              kid.avatarUrl != null && kid.avatarUrl!.isNotEmpty
-                  ? (kid.avatarUrl!.startsWith('assets/')
-                      ? SvgPicture.asset(
-                          kid.avatarUrl!,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          height: double.infinity,
-                        )
-                      : Image.network(
-                          kid.avatarUrl!,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          height: double.infinity,
-                        ))
-                  : Container(
-                      color: const Color(0xFFF9C433).withValues(alpha: 0.9),
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.person, size: 48, color: Colors.black38),
-                            const SizedBox(height: 4),
-                            Text(
+              // Hele kortet: tryk for at logge ind som barnet
+              Positioned.fill(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: onLogin,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Positioned.fill(
+                          child: kid.avatarUrl != null && kid.avatarUrl!.isNotEmpty
+                              ? (kid.avatarUrl!.startsWith('assets/')
+                                  ? SvgPicture.asset(
+                                      kid.avatarUrl!,
+                                      fit: BoxFit.cover,
+                                      width: double.infinity,
+                                      height: double.infinity,
+                                    )
+                                  : Image.network(
+                                      kid.avatarUrl!,
+                                      fit: BoxFit.cover,
+                                      width: double.infinity,
+                                      height: double.infinity,
+                                    ))
+                              : Container(
+                                  color: const Color(0xFFF9C433).withValues(alpha: 0.9),
+                                  child: Center(
+                                    child: Column(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.person, size: 48, color: Colors.black38),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          kid.name,
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.black54,
+                                          ),
+                                          textAlign: TextAlign.center,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                        ),
+                        // Navn øverst – plads til indstillingsikon til højre
+                        Positioned(
+                          top: 4,
+                          left: 4,
+                          right: 44,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
                               kid.name,
                               style: const TextStyle(
-                                fontSize: 12,
+                                fontSize: 11,
                                 fontWeight: FontWeight.bold,
-                                color: Colors.black54,
+                                color: Colors.white,
                               ),
                               textAlign: TextAlign.center,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ],
+                          ),
                         ),
-                      ),
-                    ),
-              // Navn øverst (let overlay)
-              Positioned(
-                top: 4,
-                left: 4,
-                right: 4,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Text(
-                    kid.name,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                    textAlign: TextAlign.center,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ),
-              // Bundmenu med to knapper
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.7),
                       ],
                     ),
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: () => _showAvatarPicker(context),
-                          icon: const Icon(Icons.person, size: 14),
-                          label: const Text('Avatar', style: TextStyle(fontSize: 10)),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF5C4033),
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                          ),
-                        ),
+                ),
+              ),
+              // Lille indstillingsikon: vælg avatar (ovenpå, stopper ikke login på resten af kortet)
+              Positioned(
+                top: 2,
+                right: 2,
+                child: Material(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: () => _showAvatarPicker(context),
+                    customBorder: const CircleBorder(),
+                    child: const Padding(
+                      padding: EdgeInsets.all(6),
+                      child: Icon(
+                        Icons.settings_outlined,
+                        color: Colors.white,
+                        size: 18,
                       ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: FilledButton.icon(
-                          onPressed: onLogin,
-                          icon: const Icon(Icons.login, size: 14),
-                          label: const Text('Login', style: TextStyle(fontSize: 10)),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFFF9C433),
-                            foregroundColor: Colors.black87,
-                            padding: const EdgeInsets.symmetric(vertical: 4),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),

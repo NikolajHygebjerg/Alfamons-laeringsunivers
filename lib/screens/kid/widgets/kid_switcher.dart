@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../../services/alfamon_evolution.dart';
+
 class KidInfo {
   final String id;
   final String name;
@@ -54,21 +56,27 @@ class _KidSwitcherState extends State<KidSwitcher> {
 
       if (active != null && active['avatar_id'] != null) {
         final avatarId = active['avatar_id'] as String;
-        int stageIndex;
 
         final libRes = await Supabase.instance.client
             .from('kid_avatar_library')
-            .select('current_stage_index')
+            .select('points_current')
             .eq('kid_id', kid.id)
             .eq('avatar_id', avatarId)
             .maybeSingle();
 
-        if (libRes != null && libRes['current_stage_index'] != null) {
-          stageIndex = libRes['current_stage_index'] as int;
-        } else {
-          final points = active['points_current'] as int? ?? 0;
-          stageIndex = await _stageFromPoints(avatarId, points);
-        }
+        final points = libRes != null
+            ? (libRes['points_current'] as int? ?? 0)
+            : (active['points_current'] as int? ?? 0);
+
+        final stagesRes = await Supabase.instance.client
+            .from('avatar_stages')
+            .select('stage_index')
+            .eq('avatar_id', avatarId)
+            .order('stage_index');
+
+        final sorted =
+            AlfamonEvolution.sortedStageIndicesFromRows(stagesRes as List);
+        final stageIndex = AlfamonEvolution.stageIndexFromPoints(points, sorted);
 
         final stage = await Supabase.instance.client
             .from('avatar_stages')
@@ -82,41 +90,6 @@ class _KidSwitcherState extends State<KidSwitcher> {
         }
       }
     }
-  }
-
-  Future<int> _stageFromPoints(String avatarId, int points) async {
-    final avatarRes = await Supabase.instance.client
-        .from('avatars')
-        .select('points_per_stage')
-        .eq('id', avatarId)
-        .maybeSingle();
-    final stagesRes = await Supabase.instance.client
-        .from('avatar_stages')
-        .select('stage_index')
-        .eq('avatar_id', avatarId)
-        .order('stage_index');
-
-    final pointsPerStage =
-        (avatarRes?['points_per_stage'] as Map<String, dynamic>?) ?? {};
-    final stages = stagesRes as List;
-    if (stages.isEmpty) return 0;
-
-    int pointsAccumulated = 0;
-    int currentStage = (stages.first as Map)['stage_index'] as int;
-
-    for (var i = 0; i < stages.length - 1; i++) {
-      final stageIdx = (stages[i] as Map)['stage_index'] as int;
-      final raw = pointsPerStage[stageIdx.toString()] ?? pointsPerStage[stageIdx];
-      var pointsNeeded = (raw as num?)?.toInt() ?? 10;
-      if (pointsNeeded < 1) pointsNeeded = 10;
-      if (points >= pointsAccumulated + pointsNeeded) {
-        pointsAccumulated += pointsNeeded;
-        currentStage = (stages[i + 1] as Map)['stage_index'] as int;
-      } else {
-        break;
-      }
-    }
-    return currentStage;
   }
 
   Future<void> _selectKid(String id) async {

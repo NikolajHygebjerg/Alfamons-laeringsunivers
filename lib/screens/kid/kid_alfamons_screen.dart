@@ -1,8 +1,14 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../../services/alfamon_evolution.dart';
+import '../../services/task_completion_service.dart';
+import 'widgets/alfamon_evolution_progress_bar.dart';
+import 'widgets/kid_session_nav_button.dart';
 
 const _danishAlphabet = 'abcdefghijklmnopqrstuvwxyzæøå';
 
@@ -23,6 +29,9 @@ class _UnlockedAlphamon {
   final int currentStage;
   final int maxStage;
 
+  /// Guldmønter allerede brugt på denne Alfamon (udvikling).
+  final int pointsInvested;
+
   _UnlockedAlphamon({
     required this.avatarId,
     required this.letter,
@@ -30,6 +39,7 @@ class _UnlockedAlphamon {
     this.imageUrl,
     required this.currentStage,
     required this.maxStage,
+    required this.pointsInvested,
   });
 }
 
@@ -44,6 +54,7 @@ class _KidAlfamonsScreenState extends State<KidAlfamonsScreen> {
   final _codeController = TextEditingController();
   bool _unlocking = false;
   String? _error;
+  int _goldCoins = 0;
 
   @override
   void initState() {
@@ -59,6 +70,14 @@ class _KidAlfamonsScreenState extends State<KidAlfamonsScreen> {
 
   Future<void> _load() async {
     final client = Supabase.instance.client;
+
+    final kidGoldRes = await client
+        .from('kids')
+        .select('gold_coins')
+        .eq('id', widget.kidId)
+        .maybeSingle();
+    final treasury = (kidGoldRes?['gold_coins'] as num?)?.toInt() ?? 0;
+
     final activeRes = await client
         .from('kid_active_avatar')
         .select('avatar_id')
@@ -84,13 +103,17 @@ class _KidAlfamonsScreenState extends State<KidAlfamonsScreen> {
         _unlockCode = code;
         _unlockedLetters = {};
         _unlockedAlphamons = {};
+        _goldCoins = treasury;
         _loading = false;
       });
       return;
     }
 
     final unlocked = unlockedRes as List;
-    final avatarIds = unlocked.map((e) => e['avatar_id'] as String).toSet().toList();
+    final avatarIds = unlocked
+        .map((e) => e['avatar_id'] as String)
+        .toSet()
+        .toList();
     final libRes = await client
         .from('kid_avatar_library')
         .select('avatar_id,current_stage_index,points_current')
@@ -127,11 +150,20 @@ class _KidAlfamonsScreenState extends State<KidAlfamonsScreen> {
       final avatarId = avMap['id'] as String;
       final lib = libMap[avatarId];
       final points = lib?['points_current'] as int? ?? 0;
-      final pointsPerStage = (avMap['points_per_stage'] as Map<String, dynamic>?) ?? {};
-      final stageIdx = _calculateStageFromPoints(points, pointsPerStage, stagesRes as List, avatarId);
+      final stagesForAvatar = (stagesRes as List)
+          .where((s) => s['avatar_id'] == avatarId)
+          .toList();
+      final sorted = AlfamonEvolution.sortedStageIndicesFromRows(
+        stagesForAvatar,
+      );
+      final stageIdx = AlfamonEvolution.stageIndexFromPoints(points, sorted);
       final storedStage = lib?['current_stage_index'] as int? ?? 0;
       if (lib != null && storedStage != stageIdx) {
-        await client.from('kid_avatar_library').update({'current_stage_index': stageIdx}).eq('kid_id', widget.kidId).eq('avatar_id', avatarId);
+        await client
+            .from('kid_avatar_library')
+            .update({'current_stage_index': stageIdx})
+            .eq('kid_id', widget.kidId)
+            .eq('avatar_id', avatarId);
       }
       final maxStage = maxStageMap[avatarId] ?? 0;
       final imageUrl = stageMap[avatarId]?[stageIdx];
@@ -142,6 +174,7 @@ class _KidAlfamonsScreenState extends State<KidAlfamonsScreen> {
         imageUrl: imageUrl?.isNotEmpty == true ? imageUrl : null,
         currentStage: stageIdx,
         maxStage: maxStage,
+        pointsInvested: points,
       );
     }
     setState(() {
@@ -149,34 +182,14 @@ class _KidAlfamonsScreenState extends State<KidAlfamonsScreen> {
       _unlockCode = code;
       _unlockedLetters = letters;
       _unlockedAlphamons = alphamons;
+      _goldCoins = treasury;
       _loading = false;
     });
   }
 
-  int _calculateStageFromPoints(int points, Map<String, dynamic> pointsPerStage, List<dynamic> allStages, String avatarId) {
-    final stages = allStages.where((s) => s['avatar_id'] == avatarId).toList()
-      ..sort((a, b) => (a['stage_index'] as int).compareTo(b['stage_index'] as int));
-    if (stages.isEmpty) return 0;
-    int pointsAccumulated = 0;
-    int currentStage = stages.first['stage_index'] as int;
-    for (var i = 0; i < stages.length - 1; i++) {
-      final stageIdx = stages[i]['stage_index'] as int;
-      final raw = pointsPerStage[stageIdx.toString()] ?? pointsPerStage[stageIdx];
-      var pointsNeeded = (raw as num?)?.toInt() ?? 10;
-      if (pointsNeeded < 1) pointsNeeded = 10;
-      if (points >= pointsAccumulated + pointsNeeded) {
-        pointsAccumulated += pointsNeeded;
-        currentStage = stages[i + 1]['stage_index'] as int;
-      } else {
-        break;
-      }
-    }
-    return currentStage;
-  }
-
   void _onLetterTap(String letter) {
     if (_unlockedLetters.contains(letter)) {
-      _selectAvatar(_unlockedAlphamons[letter]!.avatarId);
+      _openAlfamonUpgradeSheet(_unlockedAlphamons[letter]!);
       return;
     }
     setState(() {
@@ -187,15 +200,53 @@ class _KidAlfamonsScreenState extends State<KidAlfamonsScreen> {
     });
   }
 
-  Future<void> _selectAvatar(String avatarId) async {
+  Future<void> _openAlfamonUpgradeSheet(_UnlockedAlphamon a) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        return Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(ctx).bottom),
+          child: _AlfamonUpgradeSheet(
+            kidId: widget.kidId,
+            alphamon: a,
+            treasuryGold: _goldCoins,
+            onTreasuryUpdated: (g) {
+              if (mounted) setState(() => _goldCoins = g);
+            },
+            onReload: _load,
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _setActiveAvatarForHome(String avatarId) async {
     final client = Supabase.instance.client;
-    final libRes = await client.from('kid_avatar_library').select('points_current').eq('kid_id', widget.kidId).eq('avatar_id', avatarId).maybeSingle();
-    final points = libRes?['points_current'] as int? ?? 0;
-    await client.from('kid_active_avatar').upsert({'kid_id': widget.kidId, 'avatar_id': avatarId, 'points_current': points}, onConflict: 'kid_id');
-    setState(() => _activeAvatarId = avatarId);
+    final libRes = await client
+        .from('kid_avatar_library')
+        .select('points_current')
+        .eq('kid_id', widget.kidId)
+        .eq('avatar_id', avatarId)
+        .maybeSingle();
+    final points = (libRes?['points_current'] as num?)?.toInt() ?? 0;
+    await client.from('kid_active_avatar').upsert({
+      'kid_id': widget.kidId,
+      'avatar_id': avatarId,
+      'points_current': points,
+    }, onConflict: 'kid_id');
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Alfamon valgt!')));
-      context.go('/kid/today/${widget.kidId}');
+      setState(() => _activeAvatarId = avatarId);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Denne Alfamon vises nu på hjemmeskærmen'),
+        ),
+      );
     }
   }
 
@@ -206,111 +257,371 @@ class _KidAlfamonsScreenState extends State<KidAlfamonsScreen> {
       setState(() => _error = 'Forkert kode! Prøv igen.');
       return;
     }
-    setState(() { _unlocking = true; _error = null; });
+    setState(() {
+      _unlocking = true;
+      _error = null;
+    });
     final client = Supabase.instance.client;
-    final avRes = await client.from('avatars').select('id,name').eq('letter', letter).maybeSingle();
+    final avRes = await client
+        .from('avatars')
+        .select('id,name')
+        .eq('letter', letter)
+        .maybeSingle();
     if (avRes == null) {
-      setState(() { _error = 'Ingen alphamon fundet.'; _unlocking = false; });
+      setState(() {
+        _error = 'Ingen alphamon fundet.';
+        _unlocking = false;
+      });
       return;
     }
     final avatarId = avRes['id'] as String;
-    final existing = await client.from('kid_unlocked_alphamons').select('id').eq('kid_id', widget.kidId).eq('avatar_id', avatarId).maybeSingle();
+    final existing = await client
+        .from('kid_unlocked_alphamons')
+        .select('id')
+        .eq('kid_id', widget.kidId)
+        .eq('avatar_id', avatarId)
+        .maybeSingle();
     if (existing != null) {
-      setState(() { _error = 'Allerede låst op!'; _unlocking = false; });
+      setState(() {
+        _error = 'Allerede låst op!';
+        _unlocking = false;
+      });
       return;
     }
-    await client.from('kid_unlocked_alphamons').insert({'kid_id': widget.kidId, 'avatar_id': avatarId});
-    final stagesRes = await client.from('avatar_stages').select('stage_index').eq('avatar_id', avatarId).order('stage_index').limit(1);
-    final initialStage = (stagesRes as List).isNotEmpty ? (stagesRes.first['stage_index'] as int) : 0;
-    await client.from('kid_avatar_library').insert({'kid_id': widget.kidId, 'avatar_id': avatarId, 'current_stage_index': initialStage, 'points_current': 0});
+    await client.from('kid_unlocked_alphamons').insert({
+      'kid_id': widget.kidId,
+      'avatar_id': avatarId,
+    });
+    final stagesRes = await client
+        .from('avatar_stages')
+        .select('stage_index')
+        .eq('avatar_id', avatarId)
+        .order('stage_index')
+        .limit(1);
+    final initialStage = (stagesRes as List).isNotEmpty
+        ? (stagesRes.first['stage_index'] as int)
+        : 0;
+    await client.from('kid_avatar_library').insert({
+      'kid_id': widget.kidId,
+      'avatar_id': avatarId,
+      'current_stage_index': initialStage,
+      'points_current': 0,
+    });
     await _load();
     if (mounted) {
-      setState(() { _unlocking = false; _showCodeModal = false; _selectedLetter = null; _codeController.clear(); });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Alfamon låst op!')));
+      setState(() {
+        _unlocking = false;
+        _showCodeModal = false;
+        _selectedLetter = null;
+        _codeController.clear();
+      });
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Alfamon låst op!')));
     }
   }
 
   void _closeModal() {
-    setState(() { _showCodeModal = false; _selectedLetter = null; _error = null; _codeController.clear(); });
+    setState(() {
+      _showCodeModal = false;
+      _selectedLetter = null;
+      _error = null;
+      _codeController.clear();
+    });
+  }
+
+  /// Én bogstavboks i gitteret (størrelse [cell] × [cell]).
+  Widget _alfamonLetterBox(String letter, double cell) {
+    final isUnlocked = _unlockedLetters.contains(letter);
+    final alphamon = _unlockedAlphamons[letter];
+    final isActive =
+        alphamon != null && _activeAvatarId == alphamon.avatarId;
+    final badge = math.max(7.0, cell * 0.22);
+    final iconSz = math.max(10.0, cell * 0.28).clamp(10.0, 16.0);
+    final rad = math.max(6.0, cell * 0.12);
+
+    return SizedBox(
+      width: cell,
+      height: cell,
+      child: GestureDetector(
+        onTap: () => _onLetterTap(letter),
+        onLongPress: isUnlocked && alphamon != null
+            ? () => _setActiveAvatarForHome(alphamon.avatarId)
+            : null,
+        child: Container(
+          decoration: BoxDecoration(
+            color: isUnlocked
+                ? Colors.green.shade400
+                : const Color(0xFFF9C433),
+            borderRadius: BorderRadius.circular(rad),
+            border: Border.all(
+              color: isActive
+                  ? Colors.amber
+                  : (isUnlocked
+                      ? Colors.green.shade600
+                      : Colors.grey.shade300),
+              width: isActive ? 3 : 2,
+            ),
+            boxShadow: const [
+              BoxShadow(
+                color: Colors.black26,
+                blurRadius: 4,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (isUnlocked &&
+                  alphamon?.imageUrl != null &&
+                  alphamon!.imageUrl!.isNotEmpty)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(rad - 2),
+                  child: Image.network(
+                    alphamon.imageUrl!,
+                    fit: BoxFit.cover,
+                  ),
+                )
+              else if (!isUnlocked)
+                Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      letter.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: math.min(cell * 0.55, 36),
+                        fontWeight: FontWeight.w900,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ),
+                )
+              else
+                Center(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      letter.toUpperCase(),
+                      style: TextStyle(
+                        fontSize: cell * 0.32,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              if (isUnlocked)
+                Positioned(
+                  top: math.max(2.0, cell * 0.04),
+                  left: math.max(2.0, cell * 0.04),
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: math.max(3.0, cell * 0.06),
+                      vertical: 1,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      letter.toUpperCase(),
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: badge,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+              if (isUnlocked)
+                Positioned(
+                  top: math.max(2.0, cell * 0.04),
+                  right: math.max(2.0, cell * 0.04),
+                  child: Container(
+                    width: math.max(16.0, math.min(cell * 0.38, 24.0)),
+                    height: math.max(16.0, math.min(cell * 0.38, 24.0)),
+                    decoration: BoxDecoration(
+                      color: isActive ? Colors.amber : Colors.green,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isActive ? Icons.star : Icons.check,
+                      size: iconSz,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              if (isUnlocked &&
+                  alphamon != null &&
+                  alphamon.maxStage > 0)
+                Positioned(
+                  bottom: math.max(2.0, cell * 0.04),
+                  left: 2,
+                  right: 2,
+                  child: Center(
+                    child: Container(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: math.max(3.0, cell * 0.05),
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        '${alphamon.currentStage}/${alphamon.maxStage}',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: math.max(6.0, cell * 0.14),
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final shortestSide = MediaQuery.of(context).size.shortestSide;
     final isTablet = shortestSide >= 600;
-    final bgAsset = isTablet ? 'assets/baggrund_roedipad.svg' : 'assets/baggrund_roediphone.svg';
+    const letterCount = 29;
+    const gap = 5.0;
+    const gridPad = 8.0;
 
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
         children: [
-          Positioned.fill(child: SvgPicture.asset(bgAsset, fit: BoxFit.cover)),
+          Positioned.fill(
+            child: SvgPicture.asset(
+              'assets/alfamonbaggrund.svg',
+              fit: BoxFit.cover,
+            ),
+          ),
           SafeArea(
             child: Column(
               children: [
                 Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text('Alfamons', style: TextStyle(fontSize: isTablet ? 28 : 24, fontWeight: FontWeight.w900, color: Colors.white)),
+                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 2),
+                  child: Text(
+                    'Alfamons',
+                    style: TextStyle(
+                      fontSize: isTablet ? 24 : 20,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      shadows: const [
+                        Shadow(
+                          blurRadius: 6,
+                          color: Colors.black54,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
                 Expanded(
                   child: _loading
-                      ? const Center(child: CircularProgressIndicator(color: Colors.white))
+                      ? const Center(
+                          child: CircularProgressIndicator(color: Colors.white),
+                        )
                       : LayoutBuilder(
                           builder: (context, constraints) {
-                            final width = constraints.maxWidth - 32;
-                            final crossCount = isTablet ? 7 : 6;
-                            final size = (width / crossCount) - 8;
-                            return SingleChildScrollView(
-                              padding: const EdgeInsets.symmetric(horizontal: 16),
-                              child: Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                alignment: WrapAlignment.center,
-                                children: _danishAlphabet.split('').map((letter) {
-                                  final isUnlocked = _unlockedLetters.contains(letter);
-                                  final alphamon = _unlockedAlphamons[letter];
-                                  final isActive = alphamon != null && _activeAvatarId == alphamon.avatarId;
-                                  return SizedBox(
-                                    width: size,
-                                    height: size,
-                                    child: GestureDetector(
-                                      onTap: () => _onLetterTap(letter),
-                                      child: Container(
-                                        decoration: BoxDecoration(
-                                          color: isUnlocked ? Colors.green.shade400 : const Color(0xFFF9C433),
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(color: isActive ? Colors.amber : (isUnlocked ? Colors.green.shade600 : Colors.grey.shade300), width: isActive ? 3 : 2),
-                                          boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4, offset: const Offset(0, 2))],
-                                        ),
-                                        child: Stack(
-                                          fit: StackFit.expand,
-                                          children: [
-                                            if (isUnlocked && alphamon?.imageUrl != null && alphamon!.imageUrl!.isNotEmpty)
-                                              ClipRRect(borderRadius: BorderRadius.circular(10), child: Image.network(alphamon.imageUrl!, fit: BoxFit.cover))
-                                            else if (!isUnlocked)
-                                              Center(child: Text(letter.toUpperCase(), style: TextStyle(fontSize: size * 0.5, fontWeight: FontWeight.w900, color: Colors.black87)))
-                                            else
-                                              Center(child: Text(letter.toUpperCase(), style: TextStyle(fontSize: size * 0.3, fontWeight: FontWeight.bold, color: Colors.white))),
-                                            if (isUnlocked)
-                                              Positioned(top: 4, left: 4, child: Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)), child: Text(letter.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)))),
-                                            if (isUnlocked)
-                                              Positioned(top: 4, right: 4, child: Container(width: 20, height: 20, decoration: BoxDecoration(color: isActive ? Colors.amber : Colors.green, shape: BoxShape.circle), child: Icon(isActive ? Icons.star : Icons.check, size: 14, color: Colors.white))),
-                                            if (isUnlocked && alphamon != null && alphamon.maxStage > 0)
-                                              Positioned(bottom: 4, left: 4, right: 4, child: Center(child: Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2), decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)), child: Text('${alphamon.currentStage}/${alphamon.maxStage}', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold))))),
-                                          ],
-                                        ),
+                            final maxW =
+                                constraints.maxWidth - 2 * gridPad;
+                            final maxH =
+                                constraints.maxHeight - 2 * gridPad;
+                            if (maxW <= 0 || maxH <= 0) {
+                              return const SizedBox.shrink();
+                            }
+
+                            var bestCols = 6;
+                            var bestCell = 0.0;
+                            for (var c = 5; c <= 12; c++) {
+                              final r = (letterCount + c - 1) ~/ c;
+                              final sW = (maxW - (c - 1) * gap) / c;
+                              final sH = (maxH - (r - 1) * gap) / r;
+                              final s = math.min(sW, sH);
+                              if (s > bestCell) {
+                                bestCell = s;
+                                bestCols = c;
+                              }
+                            }
+                            final rows =
+                                (letterCount + bestCols - 1) ~/ bestCols;
+                            bestCell = bestCell.clamp(36.0, 120.0);
+                            if (rows * bestCell + (rows - 1) * gap > maxH) {
+                              bestCell = (maxH - (rows - 1) * gap) / rows;
+                            }
+                            if (bestCols * bestCell + (bestCols - 1) * gap >
+                                maxW) {
+                              bestCell =
+                                  (maxW - (bestCols - 1) * gap) / bestCols;
+                            }
+                            bestCell = math.max(32.0, bestCell);
+                            final cols = bestCols;
+                            final letters = _danishAlphabet.split('');
+
+                            return Padding(
+                              padding: const EdgeInsets.all(gridPad),
+                              child: Center(
+                                child: Column(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.center,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: List.generate(rows, (r) {
+                                    final start = r * cols;
+                                    final end = math.min(
+                                      start + cols,
+                                      letters.length,
+                                    );
+                                    return Padding(
+                                      padding: EdgeInsets.only(
+                                        bottom:
+                                            r < rows - 1 ? gap : 0,
                                       ),
-                                    ),
-                                  );
-                                }).toList(),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          for (var i = start;
+                                              i < end;
+                                              i++)
+                                            Padding(
+                                              padding: EdgeInsets.only(
+                                                right: i < end - 1
+                                                    ? gap
+                                                    : 0,
+                                              ),
+                                              child: _alfamonLetterBox(
+                                                letters[i],
+                                                bestCell,
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    );
+                                  }),
+                                ),
                               ),
                             );
                           },
                         ),
                 ),
-                _buildBottomNav(context),
               ],
             ),
+          ),
+          Positioned(
+            top: MediaQuery.paddingOf(context).top + 8,
+            left: 8,
+            child: KidSessionNavButton(kidId: widget.kidId),
           ),
           if (_showCodeModal && _selectedLetter != null) _buildCodeModal(),
         ],
@@ -329,20 +640,90 @@ class _KidAlfamonsScreenState extends State<KidAlfamonsScreen> {
             child: Container(
               margin: const EdgeInsets.all(24),
               padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: Colors.black38, blurRadius: 20, offset: const Offset(0, 10))]),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black38,
+                    blurRadius: 20,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(_selectedLetter!.toUpperCase(), style: const TextStyle(fontSize: 48, fontWeight: FontWeight.w900)),
+                  Text(
+                    _selectedLetter!.toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 48,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  const Text('Lås alphamon op!', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Lås alphamon op!',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 4),
-                  Text('Spørg en voksen om koden.', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: Colors.grey.shade700)),
+                  Text(
+                    'Spørg en voksen om koden.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                  ),
                   const SizedBox(height: 20),
-                  TextField(controller: _codeController, keyboardType: TextInputType.number, maxLength: 4, textAlign: TextAlign.center, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, letterSpacing: 8), decoration: InputDecoration(hintText: '4-cifret kode', counterText: '', border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)), filled: true), onChanged: (_) => setState(() => _error = null)),
-                  if (_error != null) ...[const SizedBox(height: 8), Text(_error!, style: const TextStyle(color: Colors.red, fontWeight: FontWeight.w600))],
+                  TextField(
+                    controller: _codeController,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 8,
+                    ),
+                    decoration: InputDecoration(
+                      hintText: '4-cifret kode',
+                      counterText: '',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      filled: true,
+                    ),
+                    onChanged: (_) => setState(() => _error = null),
+                  ),
+                  if (_error != null) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      _error!,
+                      style: const TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 16),
-                  Row(children: [Expanded(child: TextButton(onPressed: _closeModal, child: const Text('Annuller'))), const SizedBox(width: 12), Expanded(child: FilledButton(onPressed: _unlocking || _codeController.text.length != 4 ? null : _unlock, child: Text(_unlocking ? 'Låser op...' : 'Lås op')))]),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: _closeModal,
+                          child: const Text('Annuller'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton(
+                          onPressed:
+                              _unlocking || _codeController.text.length != 4
+                              ? null
+                              : _unlock,
+                          child: Text(_unlocking ? 'Låser op...' : 'Lås op'),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -352,46 +733,437 @@ class _KidAlfamonsScreenState extends State<KidAlfamonsScreen> {
     );
   }
 
-  Widget _buildBottomNav(BuildContext context) {
-    return Container(
-      color: Colors.black26,
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-      width: double.infinity,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _NavItem(icon: Icons.today, label: 'I dag', onTap: () => context.go('/kid/today/${widget.kidId}')),
-                _NavItem(icon: Icons.calendar_view_week, label: 'Ugen', onTap: () => context.go('/kid/week/${widget.kidId}')),
-                _NavItem(icon: Icons.library_books, label: 'Bibliotek', onTap: () => context.go('/kid/library/${widget.kidId}')),
-                _NavItem(icon: Icons.pets, label: 'Alfamons', selected: true),
-                _NavItem(icon: Icons.sports_esports, label: 'Spil', onTap: () => context.go('/kid/spil/${widget.kidId}')),
-                _NavItem(icon: Icons.emoji_events, label: 'Præstationer', onTap: () => context.go('/kid/achievements/${widget.kidId}')),
-              ],
+}
+
+class _AlfamonUpgradeSheet extends StatefulWidget {
+  const _AlfamonUpgradeSheet({
+    required this.kidId,
+    required this.alphamon,
+    required this.treasuryGold,
+    required this.onTreasuryUpdated,
+    required this.onReload,
+  });
+
+  final String kidId;
+  final _UnlockedAlphamon alphamon;
+  final int treasuryGold;
+  final void Function(int newTreasury) onTreasuryUpdated;
+  final Future<void> Function() onReload;
+
+  @override
+  State<_AlfamonUpgradeSheet> createState() => _AlfamonUpgradeSheetState();
+}
+
+class _AlfamonUpgradeSheetState extends State<_AlfamonUpgradeSheet> {
+  /// Sidst synkroniserede kistesaldo (efter Godkend / ved åbning).
+  late int _committedTreasury;
+
+  /// Sidst synkroniserede point på Alfamon.
+  late int _committedPoints;
+
+  /// Forskel der anvendes ved Godkend: positiv = fra kiste til Alfamon, negativ = tilbage til kisten.
+  int _pendingDelta = 0;
+  bool _busy = false;
+  String? _previewImageUrl;
+
+  int get _maxPositive => math.min(
+    _committedTreasury,
+    AlfamonEvolution.maxProgressPoints - _committedPoints,
+  );
+  int get _maxNegative => -_committedPoints;
+
+  /// Forhåndsvisning af kiste efter det afventende træk.
+  int get _previewTreasury => _committedTreasury - _pendingDelta;
+
+  /// Forhåndsvisning af Alfamon-point (til bar/tekst).
+  int get _previewPoints => (_committedPoints + _pendingDelta)
+      .clamp(0, AlfamonEvolution.maxProgressPoints)
+      .toInt();
+
+  @override
+  void initState() {
+    super.initState();
+    _committedTreasury = widget.treasuryGold;
+    _committedPoints = widget.alphamon.pointsInvested;
+    _previewImageUrl = widget.alphamon.imageUrl;
+  }
+
+  Future<void> _refreshPreviewAfterTransfer() async {
+    final client = Supabase.instance.client;
+    final lib = await client
+        .from('kid_avatar_library')
+        .select('points_current')
+        .eq('kid_id', widget.kidId)
+        .eq('avatar_id', widget.alphamon.avatarId)
+        .maybeSingle();
+    final points = (lib?['points_current'] as num?)?.toInt() ?? 0;
+    final stagesRes = await client
+        .from('avatar_stages')
+        .select('stage_index')
+        .eq('avatar_id', widget.alphamon.avatarId)
+        .order('stage_index');
+    final sorted = AlfamonEvolution.sortedStageIndicesFromRows(
+      stagesRes as List,
+    );
+    final stageIdx = AlfamonEvolution.stageIndexFromPoints(points, sorted);
+    final stageData = await client
+        .from('avatar_stages')
+        .select('image_url')
+        .eq('avatar_id', widget.alphamon.avatarId)
+        .eq('stage_index', stageIdx)
+        .maybeSingle();
+    final url = stageData?['image_url'] as String?;
+    if (mounted) {
+      setState(() {
+        _committedPoints = points;
+        if (url != null && url.isNotEmpty) {
+          _previewImageUrl = url;
+        }
+      });
+    }
+  }
+
+  void _bumpDelta(int step) {
+    if (_busy) return;
+    final lo = _maxNegative;
+    final hi = _maxPositive;
+    final next = (_pendingDelta + step).clamp(lo, hi).toInt();
+    if (next == _pendingDelta) return;
+    setState(() => _pendingDelta = next);
+  }
+
+  Future<void> _openAmountEditor() async {
+    if (_busy) return;
+    final controller = TextEditingController(text: '$_pendingDelta');
+    int? parsed;
+    try {
+      parsed = await showDialog<int>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Antal guldmønter'),
+          content: TextField(
+            controller: controller,
+            keyboardType: const TextInputType.numberWithOptions(signed: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'^-?\d{0,4}')),
+            ],
+            decoration: const InputDecoration(
+              hintText: 'Fx 5 eller -2',
+              helperText:
+                  'Positivt: fra kisten til Alfamon. Negativt: tilbage til kisten.',
+            ),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Annuller'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final v = int.tryParse(controller.text.trim());
+                if (v == null) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(content: Text('Indtast et heltal')),
+                  );
+                  return;
+                }
+                Navigator.pop(ctx, v);
+              },
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+    final value = parsed;
+    if (value == null || !mounted) return;
+    setState(() {
+      _pendingDelta = value.clamp(_maxNegative, _maxPositive).toInt();
+    });
+  }
+
+  Future<void> _onApprove() async {
+    if (_busy || _pendingDelta == 0) return;
+    setState(() => _busy = true);
+    final d = _pendingDelta;
+    try {
+      if (d > 0) {
+        await TaskCompletionService.transferGoldToAlfamon(
+          kidId: widget.kidId,
+          avatarId: widget.alphamon.avatarId,
+          amount: d,
+        );
+      } else {
+        await TaskCompletionService.transferGoldFromAlfamon(
+          kidId: widget.kidId,
+          avatarId: widget.alphamon.avatarId,
+          amount: -d,
+        );
+      }
+      if (!mounted) return;
+      final newTreasury = _committedTreasury - d;
+      setState(() {
+        _committedTreasury = newTreasury;
+        _pendingDelta = 0;
+        _busy = false;
+      });
+      widget.onTreasuryUpdated(newTreasury);
+      await widget.onReload();
+      await _refreshPreviewAfterTransfer();
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busy = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+
+  Widget _roundGoldButton({
+    required IconData icon,
+    required VoidCallback? onTap,
+    List<Color>? gradientColors,
+    double size = 64,
+    double iconSize = 40,
+  }) {
+    final colors =
+        gradientColors ??
+        const [Color(0xFFFFE082), Color(0xFFF9C433), Color(0xFFE6A000)];
+    final enabled = onTap != null && !_busy;
+    return Material(
+      elevation: 6,
+      shadowColor: const Color(0xFFF9C433).withValues(alpha: 0.6),
+      shape: const CircleBorder(),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        child: Ink(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: colors,
             ),
           ),
-          TextButton(onPressed: () async { final prefs = await SharedPreferences.getInstance(); await prefs.remove('kidId'); await prefs.remove('kidStayLoggedIn'); if (context.mounted) context.go('/kid/select'); }, child: const Text('Log ud', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600))),
-        ],
+          child: Icon(
+            icon,
+            size: iconSize,
+            color: enabled ? Colors.black87 : Colors.black26,
+          ),
+        ),
       ),
     );
   }
-}
-
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  const _NavItem({required this.icon, required this.label, this.selected = false, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final child = Column(mainAxisSize: MainAxisSize.min, children: [Icon(icon, color: selected ? Colors.amber : Colors.white70, size: 26), Text(label, style: TextStyle(color: selected ? Colors.amber : Colors.white70, fontSize: 11))]);
-    if (onTap != null) return GestureDetector(onTap: onTap, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: child));
-    return Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: child);
+    final theme = Theme.of(context);
+    final url = _previewImageUrl;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade400,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 240,
+            child: Center(
+              child: url != null && url.isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(20),
+                      child: Image.network(
+                        url,
+                        fit: BoxFit.contain,
+                        key: ValueKey(url),
+                        errorBuilder: (_, __, ___) => Icon(
+                          Icons.pets,
+                          size: 120,
+                          color: theme.colorScheme.primary,
+                        ),
+                      ),
+                    )
+                  : Icon(
+                      Icons.pets,
+                      size: 120,
+                      color: theme.colorScheme.primary,
+                    ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          AlfamonEvolutionProgressBar(points: _previewPoints),
+          const SizedBox(height: 8),
+          Text(
+            '$_previewPoints / ${AlfamonEvolution.maxProgressPoints} guldmønter på Alfamon',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontWeight: FontWeight.w600,
+              color: theme.colorScheme.onSurface.withValues(alpha: 0.75),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Opacity(
+            opacity: _busy ? 0.45 : 1,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    'assets/moent.png',
+                    width: 52,
+                    height: 52,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => Icon(
+                      Icons.monetization_on,
+                      size: 52,
+                      color: const Color(0xFFF9C433),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  SizedBox(
+                    width: 76,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        '$_previewTreasury',
+                        maxLines: 1,
+                        style:
+                            theme.textTheme.displaySmall?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 44,
+                              height: 1,
+                              color: theme.colorScheme.onSurface,
+                            ) ??
+                            const TextStyle(
+                              fontSize: 44,
+                              fontWeight: FontWeight.w900,
+                            ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  _roundGoldButton(
+                    icon: Icons.remove,
+                    onTap: _busy ? null : () => _bumpDelta(-1),
+                    gradientColors: const [
+                      Color(0xFFFFCDD2),
+                      Color(0xFFE57373),
+                      Color(0xFFC62828),
+                    ],
+                    size: 60,
+                    iconSize: 36,
+                  ),
+                  const SizedBox(width: 6),
+                  Material(
+                    color: theme.colorScheme.surfaceContainerHighest.withValues(
+                      alpha: 0.85,
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      onTap: _busy ? null : _openAmountEditor,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minWidth: 52),
+                          child: Text(
+                            '$_pendingDelta',
+                            textAlign: TextAlign.center,
+                            style: theme.textTheme.headlineMedium?.copyWith(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 36,
+                              height: 1,
+                              color: _pendingDelta == 0
+                                  ? theme.colorScheme.onSurface.withValues(
+                                      alpha: 0.45,
+                                    )
+                                  : const Color(0xFF2E7D32),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  _roundGoldButton(
+                    icon: Icons.add,
+                    onTap: _busy ? null : () => _bumpDelta(1),
+                    size: 60,
+                    iconSize: 36,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Center(
+            child: Tooltip(
+              message: 'Godkend',
+              child: Material(
+                elevation: _pendingDelta == 0 || _busy ? 0 : 10,
+                shadowColor: Colors.black38,
+                color: _pendingDelta == 0 || _busy
+                    ? theme.colorScheme.surfaceContainerHighest.withValues(
+                        alpha: 0.5,
+                      )
+                    : const Color(0xFFF2F0EB),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                  side: BorderSide(
+                    color: theme.colorScheme.outline.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: InkWell(
+                  onTap: _pendingDelta == 0 || _busy ? null : _onApprove,
+                  borderRadius: BorderRadius.circular(20),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: _busy
+                        ? const SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: CircularProgressIndicator(strokeWidth: 2.5),
+                          )
+                        : Icon(
+                            Icons.check_rounded,
+                            size: 36,
+                            color: _pendingDelta == 0
+                                ? theme.colorScheme.onSurface.withValues(
+                                    alpha: 0.25,
+                                  )
+                                : Colors.black,
+                          ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

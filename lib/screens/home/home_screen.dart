@@ -4,9 +4,23 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/parent_code_first_setup_dialog.dart';
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ParentCodeFirstSetupDialog.showIfNeeded(context);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -82,8 +96,10 @@ class HomeScreen extends StatelessWidget {
                               final prefs = await SharedPreferences.getInstance();
                               await prefs.remove('kidId');
                               await prefs.remove('kidStayLoggedIn');
+                              if (!context.mounted) return;
                               await context.read<AuthProvider>().signOut();
-                              if (context.mounted) context.go('/auth');
+                              if (!context.mounted) return;
+                              context.go('/auth');
                             },
                             child: const Text(
                               'Log ud',

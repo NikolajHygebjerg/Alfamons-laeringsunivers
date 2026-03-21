@@ -60,8 +60,12 @@
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Appen bruger mikrofon til at optage ord til lydbiblioteket, så børn kan få ord læst op i bøgerne.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Appen bruger adgang til fotobiblioteket, så du kan vælge billeder til bøgerne.</string>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>

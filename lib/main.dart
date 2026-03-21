@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -24,6 +25,7 @@ import 'screens/admin/admin_book_editor_screen.dart';
 import 'screens/admin/admin_bogbutik_screen.dart';
 import 'screens/kid/kid_select_screen.dart';
 import 'screens/kid/kid_today_screen.dart';
+import 'screens/kid/kid_tasks_screen.dart';
 import 'screens/kid/kid_week_screen.dart';
 import 'screens/kid/kid_library_screen.dart';
 import 'screens/kid/kid_alfamons_screen.dart';
@@ -48,10 +50,12 @@ bool _startupKidStayLoggedIn = true;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
+  if (!kIsWeb) {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
 
   await SupabaseService.init();
 
@@ -239,6 +243,13 @@ GoRouter _router(AuthProvider authProvider) => GoRouter(
       builder: (context, state) {
         final kidId = state.pathParameters['kidId']!;
         return KidTodayScreen(kidId: kidId);
+      },
+    ),
+    GoRoute(
+      path: '/kid/tasks/:kidId',
+      builder: (context, state) {
+        final kidId = state.pathParameters['kidId']!;
+        return KidTasksScreen(kidId: kidId);
       },
     ),
     GoRoute(

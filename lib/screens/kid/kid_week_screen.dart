@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
-import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/task.dart';
+import '../../utils/kid_task_instances.dart';
+import '../../utils/recurring_task_schedule.dart';
+import 'widgets/kid_session_nav_button.dart';
 
 class KidWeekScreen extends StatefulWidget {
   final String kidId;
@@ -38,7 +38,9 @@ class _KidWeekScreenState extends State<KidWeekScreen> {
     final toCreate = <Map<String, dynamic>>[];
     final recurring = await client
         .from('recurring_tasks')
-        .select('task_id,due_time,allow_upfront,per_day_count')
+        .select(
+          'task_id,due_time,allow_upfront,per_day_count,schedule_mode,weekdays,specific_dates',
+        )
         .eq('kid_id', widget.kidId);
 
     for (var d = 0; d < 7; d++) {
@@ -51,25 +53,28 @@ class _KidWeekScreenState extends State<KidWeekScreen> {
           .eq('kid_id', widget.kidId)
           .eq('date', dateStr);
 
-      final taskCounts = <String, int>{};
+      final existingTaskIds = <String>{};
       for (final e in existing as List) {
-        final tid = e['task_id'] as String;
-        taskCounts[tid] = (taskCounts[tid] ?? 0) + 1;
+        existingTaskIds.add(e['task_id'] as String);
       }
 
       for (final rt in recurring as List) {
-        final tid = rt['task_id'] as String;
-        final needed = (rt['per_day_count'] as int? ?? 1) - (taskCounts[tid] ?? 0);
-        for (var i = 0; i < needed; i++) {
-          toCreate.add({
-            'task_id': tid,
-            'kid_id': widget.kidId,
-            'date': dateStr,
-            'due_time': rt['due_time'],
-            'allow_upfront': rt['allow_upfront'] ?? false,
-            'status': 'pending',
-          });
-        }
+        final row = Map<String, dynamic>.from(rt as Map);
+        if (!RecurringTaskSchedule.appliesToDate(row, date)) continue;
+        final tid = row['task_id'] as String;
+        if (existingTaskIds.contains(tid)) continue;
+        final perDay = row['per_day_count'] as int? ?? 1;
+        toCreate.add({
+          'task_id': tid,
+          'kid_id': widget.kidId,
+          'date': dateStr,
+          'due_time': row['due_time'],
+          'allow_upfront': row['allow_upfront'] ?? false,
+          'status': 'pending',
+          'required_completions': perDay < 1 ? 1 : perDay,
+          'completions_done': 0,
+        });
+        existingTaskIds.add(tid);
       }
     }
 
@@ -84,14 +89,20 @@ class _KidWeekScreenState extends State<KidWeekScreen> {
 
       final res = await client
           .from('task_instances')
-          .select('id,task_id,kid_id,date,due_time,status,tasks(id,title,mode,points_fixed,points_per_unit)')
+          .select('id,task_id,kid_id,date,due_time,status,required_completions,completions_done,tasks(id,title,mode,points_fixed,points_per_unit,emoji)')
           .eq('kid_id', widget.kidId)
           .eq('date', dateStr)
           .order('due_time', ascending: true, nullsFirst: false);
 
-      weekTasks[dateStr] = (res as List)
+      final activeThatDay =
+          activeRecurringTaskIdsForDate(recurring as List, date);
+      final raw = (res as List)
           .map((e) => TaskInstance.fromJson(Map<String, dynamic>.from(e)))
           .toList();
+      weekTasks[dateStr] = filterAndDedupeInstancesForActiveRecurring(
+        raw,
+        activeThatDay,
+      );
     }
 
     setState(() {
@@ -134,9 +145,13 @@ class _KidWeekScreenState extends State<KidWeekScreen> {
                       ? const Center(child: CircularProgressIndicator(color: Colors.white))
                       : _buildWeekContent(),
                 ),
-                _buildBottomNav(context),
               ],
             ),
+          ),
+          Positioned(
+            top: MediaQuery.paddingOf(context).top + 8,
+            left: 8,
+            child: KidSessionNavButton(kidId: widget.kidId),
           ),
         ],
       ),
@@ -215,6 +230,11 @@ class _KidWeekScreenState extends State<KidWeekScreen> {
                     padding: const EdgeInsets.only(bottom: 4),
                     child: Row(
                       children: [
+                        Text(
+                          ti.task.displayEmoji,
+                          style: const TextStyle(fontSize: 22),
+                        ),
+                        const SizedBox(width: 6),
                         Icon(
                           ti.isCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
                           size: 20,
@@ -258,104 +278,5 @@ class _KidWeekScreenState extends State<KidWeekScreen> {
         }),
       ),
     );
-  }
-
-  Widget _buildBottomNav(BuildContext context) {
-    return Container(
-      color: Colors.black26,
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-      width: double.infinity,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _NavItem(
-                  icon: Icons.today,
-                  label: 'I dag',
-                  selected: false,
-                  onTap: () => context.go('/kid/today/${widget.kidId}'),
-                ),
-                _NavItem(
-                  icon: Icons.calendar_view_week,
-                  label: 'Ugen',
-                  selected: true,
-                ),
-                _NavItem(
-                  icon: Icons.library_books,
-                  label: 'Bibliotek',
-                  selected: false,
-                  onTap: () => context.go('/kid/library/${widget.kidId}'),
-                ),
-                _NavItem(
-                  icon: Icons.pets,
-                  label: 'Alfamons',
-                  selected: false,
-                  onTap: () => context.go('/kid/alfamons/${widget.kidId}'),
-                ),
-                _NavItem(
-                  icon: Icons.sports_esports,
-                  label: 'Spil',
-                  selected: false,
-                  onTap: () => context.go('/kid/spil/${widget.kidId}'),
-                ),
-                _NavItem(
-                  icon: Icons.emoji_events,
-                  label: 'Præstationer',
-                  selected: false,
-                  onTap: () => context.go('/kid/achievements/${widget.kidId}'),
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: () async {
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.remove('kidId');
-              await prefs.remove('kidStayLoggedIn');
-              if (context.mounted) context.go('/kid/select');
-            },
-            child: const Text(
-              'Log ud',
-              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    this.selected = false,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final child = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: selected ? Colors.amber : Colors.white70, size: 28),
-        Text(label, style: TextStyle(color: selected ? Colors.amber : Colors.white70, fontSize: 12)),
-      ],
-    );
-    if (onTap != null) {
-      return GestureDetector(
-        onTap: onTap,
-        child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: child),
-      );
-    }
-    return Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: child);
   }
 }

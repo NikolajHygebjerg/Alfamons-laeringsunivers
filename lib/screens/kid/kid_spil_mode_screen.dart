@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'widgets/kid_session_nav_button.dart';
 
 /// Samlet spilskærm: Ven (venstre), Computer (midten), Aktive spil (højre).
 /// Bruger kampskaerm.png som baggrund.
@@ -280,11 +281,7 @@ class _KidSpilModeScreenState extends State<KidSpilModeScreen> {
                   padding: const EdgeInsets.all(8),
                   child: Row(
                     children: [
-                      IconButton(
-                        icon: const Icon(Icons.home, color: Colors.white),
-                        onPressed: () => context.go('/kid/today/${widget.kidId}'),
-                        tooltip: 'Hjem',
-                      ),
+                      KidSessionNavButton(kidId: widget.kidId),
                       const Spacer(),
                     ],
                   ),
@@ -301,7 +298,7 @@ class _KidSpilModeScreenState extends State<KidSpilModeScreen> {
                           child: _ModeButton(
                             title: 'Kæmp mod en ven',
                             onTap: () =>
-                                context.go('/kid/spil/${widget.kidId}/ven'),
+                                context.push('/kid/spil/${widget.kidId}/ven'),
                           ),
                         ),
                       ),
@@ -312,7 +309,7 @@ class _KidSpilModeScreenState extends State<KidSpilModeScreen> {
                           child: _ModeButton(
                             title: 'Kæmp mod computeren',
                             onTap: () =>
-                                context.go('/kid/spil/${widget.kidId}/computer'),
+                                context.push('/kid/spil/${widget.kidId}/computer'),
                           ),
                         ),
                       ),
@@ -505,14 +502,14 @@ class _GameCard extends StatelessWidget {
                             ? null
                             : () {
                                 if (item.matchId != null) {
-                                  context.go(
+                                  context.push(
                                       '/kid/spil/$kidId/pvp/${item.matchId}');
                                 } else if (item.type == _GameType.computer) {
                                   final uri = item.computerMatchId != null
                                       ? Uri.parse('/kid/spil/$kidId/computer')
                                           .replace(queryParameters: {'matchId': item.computerMatchId})
                                       : Uri.parse('/kid/spil/$kidId/computer');
-                                  context.go(uri.toString());
+                                  context.push(uri.toString());
                                 }
                               },
                         icon: const Icon(Icons.play_arrow,

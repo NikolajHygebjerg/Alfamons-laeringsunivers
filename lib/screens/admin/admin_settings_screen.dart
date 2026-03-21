@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/services.dart';
+
+import '../../services/parent_code_service.dart';
 
 class AdminSettingsScreen extends StatefulWidget {
   const AdminSettingsScreen({super.key});
@@ -11,7 +13,6 @@ class AdminSettingsScreen extends StatefulWidget {
 class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   final _codeController = TextEditingController();
   bool _loading = false;
-  bool _saved = false;
 
   @override
   void initState() {
@@ -20,38 +21,25 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
   }
 
   Future<void> _loadApprovalCode() async {
-    final res = await Supabase.instance.client
-        .from('settings')
-        .select('value')
-        .eq('key', 'approval_code')
-        .maybeSingle();
+    final existing = await ParentCodeService.fetchApprovalCode();
     if (mounted) {
-      _codeController.text = (res?['value'] as String?) ?? '';
+      _codeController.text = existing ?? '';
     }
   }
 
   Future<void> _saveApprovalCode() async {
     final code = _codeController.text.trim();
-    if (code.isEmpty) {
+    if (!ParentCodeService.isValidFormat(code)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Indtast en forældrekode')),
+        const SnackBar(content: Text('Forældrekode skal være præcis 4 cifre')),
       );
       return;
     }
-    setState(() {
-      _loading = true;
-      _saved = false;
-    });
+    setState(() => _loading = true);
     try {
-      await Supabase.instance.client.from('settings').upsert(
-        {'key': 'approval_code', 'value': code},
-        onConflict: 'key',
-      );
+      await ParentCodeService.saveApprovalCode(code);
       if (mounted) {
-        setState(() {
-          _loading = false;
-          _saved = true;
-        });
+        setState(() => _loading = false);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Forældrekode gemt')),
         );
@@ -99,18 +87,21 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    '4-tegn kode som forældre skal taste ved færdiggørelse og godkendelse af opgaver. Gælder for alle børn.',
+                    '4 cifre – bruges når børn færdiggør opgaver, ved godkendelse og ved point for læsning. Du satte koden første gang du loggede ind; her kan du ændre den.',
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: _codeController,
+                    keyboardType: TextInputType.number,
+                    maxLength: 4,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                     decoration: const InputDecoration(
                       labelText: 'Forældrekode',
                       border: OutlineInputBorder(),
                       hintText: 'fx 1234',
+                      counterText: '',
                     ),
                     obscureText: true,
-                    onChanged: (_) => setState(() => _saved = false),
                   ),
                   const SizedBox(height: 12),
                   ElevatedButton(

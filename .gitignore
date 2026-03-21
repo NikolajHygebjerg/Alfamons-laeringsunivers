@@ -47,3 +47,9 @@ lib/config/supabase_config_local.dart
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Xcode – ikke commit lokale brugerindstillinger
+**/xcuserdata/
+
+# Supabase CLI midlertidige filer
+supabase/.temp/

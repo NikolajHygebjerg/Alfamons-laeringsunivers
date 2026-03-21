@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/kid.dart';
+import 'widgets/kid_session_nav_button.dart';
 
 /// Vælg ven at udfordre – kun børn under samme forælder.
 class KidSpilVenScreen extends StatefulWidget {
@@ -463,113 +463,19 @@ class _KidSpilVenScreenState extends State<KidSpilVenScreen> {
                               ),
                             ),
                 ),
-                _buildBottomNav(context),
               ],
+            ),
+          ),
+          Positioned(
+            top: MediaQuery.paddingOf(context).top + 8,
+            left: 8,
+            child: KidSessionNavButton(
+              kidId: widget.kidId,
+              fallbackLocation: '/kid/spil/${widget.kidId}',
             ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _buildBottomNav(BuildContext context) {
-    return Container(
-      color: Colors.black26,
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-      width: double.infinity,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _NavItem(
-                  icon: Icons.today,
-                  label: 'I dag',
-                  selected: false,
-                  onTap: () => context.go('/kid/today/${widget.kidId}'),
-                ),
-                _NavItem(
-                  icon: Icons.calendar_view_week,
-                  label: 'Ugen',
-                  selected: false,
-                  onTap: () => context.go('/kid/week/${widget.kidId}'),
-                ),
-                _NavItem(
-                  icon: Icons.library_books,
-                  label: 'Bibliotek',
-                  selected: false,
-                  onTap: () => context.go('/kid/library/${widget.kidId}'),
-                ),
-                _NavItem(
-                  icon: Icons.pets,
-                  label: 'Alfamons',
-                  selected: false,
-                  onTap: () => context.go('/kid/alfamons/${widget.kidId}'),
-                ),
-                _NavItem(icon: Icons.sports_esports, label: 'Spil', selected: true),
-                _NavItem(
-                  icon: Icons.emoji_events,
-                  label: 'Præstationer',
-                  selected: false,
-                  onTap: () => context.go('/kid/achievements/${widget.kidId}'),
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: () async {
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.remove('kidId');
-              await prefs.remove('kidStayLoggedIn');
-              if (context.mounted) context.go('/kid/select');
-            },
-            child: const Text(
-              'Log ud',
-              style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback? onTap;
-
-  const _NavItem({
-    required this.icon,
-    required this.label,
-    this.selected = false,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final child = Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: selected ? Colors.amber : Colors.white70, size: 28),
-        Text(label, style: TextStyle(color: selected ? Colors.amber : Colors.white70, fontSize: 12)),
-      ],
-    );
-    if (onTap != null) {
-      return GestureDetector(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: child,
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: child,
     );
   }
 }
