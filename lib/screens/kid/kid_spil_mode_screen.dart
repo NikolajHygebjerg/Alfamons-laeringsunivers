@@ -264,9 +264,6 @@ class _KidSpilModeScreenState extends State<KidSpilModeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final shortestSide = MediaQuery.of(context).size.shortestSide;
-    final isTablet = shortestSide >= 600;
-
     return Scaffold(
       body: Stack(
         fit: StackFit.expand,
@@ -275,61 +272,169 @@ class _KidSpilModeScreenState extends State<KidSpilModeScreen> {
             child: Image.asset('assets/kampskaerm.png', fit: BoxFit.cover),
           ),
           SafeArea(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Row(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final w = constraints.maxWidth;
+                final h = constraints.maxHeight;
+                final shortest = w < h ? w : h;
+                // Kun rigtig tablet-/desktop-bredde + landskab + min. korte kant (aldrig telefon).
+                final useWideRow = shortest >= 550 &&
+                    w >= 780 &&
+                    h >= 460 &&
+                    w >= h * 1.08;
+
+                if (!useWideRow) {
+                  // Telefon: samme 1/3 + 1/3 + 1/3 som tablet – små gule knapper + aktive spil i højre felt
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      KidSessionNavButton(kidId: widget.kidId),
-                      const Spacer(),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+                        child: Row(
+                          children: [
+                            KidSessionNavButton(kidId: widget.kidId),
+                            const Spacer(),
+                          ],
+                        ),
+                      ),
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 4),
+                                child: Center(
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: (w / 3 - 10)
+                                          .clamp(88.0, 220.0),
+                                    ),
+                                    child: _ModeButton(
+                                      title: 'Kæmp mod en ven',
+                                      onTap: () => context.push(
+                                        '/kid/spil/${widget.kidId}/ven',
+                                      ),
+                                      fullWidth: true,
+                                      phoneColumn: true,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 4),
+                                child: Center(
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: (w / 3 - 10)
+                                          .clamp(88.0, 220.0),
+                                    ),
+                                    child: _ModeButton(
+                                      title: 'Kæmp mod computeren',
+                                      onTap: () => context.push(
+                                        '/kid/spil/${widget.kidId}/computer',
+                                      ),
+                                      fullWidth: true,
+                                      phoneColumn: true,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: _ActiveGamesPanel(
+                                  kidId: widget.kidId,
+                                  games: _games,
+                                  loading: _loading,
+                                  onWithdraw: _withdrawInvitation,
+                                  onQuit: _quitMatch,
+                                  onQuitComputer: _quitComputerMatch,
+                                  useWideCardFraction: true,
+                                  compactHeader: true,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
-                  ),
-                ),
-                const Spacer(flex: 1),
-                Expanded(
-                  flex: 8,
-                  child: Row(
-                    children: [
-                      // 1/3 venstre: Kæmp mod en ven
-                      Expanded(
-                        flex: 1,
-                        child: Center(
-                          child: _ModeButton(
-                            title: 'Kæmp mod en ven',
-                            onTap: () =>
-                                context.push('/kid/spil/${widget.kidId}/ven'),
+                  );
+                }
+
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.all(8),
+                      child: Row(
+                        children: [
+                          KidSessionNavButton(kidId: widget.kidId),
+                          const Spacer(),
+                        ],
+                      ),
+                    ),
+                    const Spacer(flex: 1),
+                    Expanded(
+                      flex: 8,
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            flex: 1,
+                            child: Center(
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: (w / 3 - 24).clamp(120.0, 280.0),
+                                ),
+                                child: _ModeButton(
+                                  title: 'Kæmp mod en ven',
+                                  onTap: () => context
+                                      .push('/kid/spil/${widget.kidId}/ven'),
+                                  fullWidth: true,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
-                      // 1/3 midten: Kæmp mod computeren
-                      Expanded(
-                        flex: 1,
-                        child: Center(
-                          child: _ModeButton(
-                            title: 'Kæmp mod computeren',
-                            onTap: () =>
-                                context.push('/kid/spil/${widget.kidId}/computer'),
+                          Expanded(
+                            flex: 1,
+                            child: Center(
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxWidth: (w / 3 - 24).clamp(120.0, 280.0),
+                                ),
+                                child: _ModeButton(
+                                  title: 'Kæmp mod computeren',
+                                  onTap: () => context
+                                      .push('/kid/spil/${widget.kidId}/computer'),
+                                  fullWidth: true,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
+                          Expanded(
+                            flex: 1,
+                            child: _ActiveGamesPanel(
+                              kidId: widget.kidId,
+                              games: _games,
+                              loading: _loading,
+                              onWithdraw: _withdrawInvitation,
+                              onQuit: _quitMatch,
+                              onQuitComputer: _quitComputerMatch,
+                              useWideCardFraction: true,
+                            ),
+                          ),
+                        ],
                       ),
-                      // 1/3 højre: Aktive spil
-                      Expanded(
-                        flex: 1,
-                        child: _ActiveGamesPanel(
-                          kidId: widget.kidId,
-                          games: _games,
-                          loading: _loading,
-                          onWithdraw: _withdrawInvitation,
-                          onQuit: _quitMatch,
-                          onQuitComputer: _quitComputerMatch,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const Spacer(flex: 1),
-              ],
+                    ),
+                    const Spacer(flex: 1),
+                  ],
+                );
+              },
             ),
           ),
         ],
@@ -342,21 +447,54 @@ class _KidSpilModeScreenState extends State<KidSpilModeScreen> {
 class _ModeButton extends StatelessWidget {
   final String title;
   final VoidCallback onTap;
+  final bool fullWidth;
+  /// Smal søjle (1/3 af skærm på telefon) – lille gul knap med skaleret tekst
+  final bool phoneColumn;
 
-  const _ModeButton({required this.title, required this.onTap});
+  const _ModeButton({
+    required this.title,
+    required this.onTap,
+    this.fullWidth = false,
+    this.phoneColumn = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return FilledButton(
+    final vPad = phoneColumn ? 8.0 : 14.0;
+    final hPad = phoneColumn ? 6.0 : 20.0;
+    final fontSize =
+        phoneColumn ? 11.0 : (fullWidth ? 15.0 : 16.0);
+    final label = phoneColumn
+        ? FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              title,
+              textAlign: TextAlign.center,
+              maxLines: 3,
+              style: TextStyle(
+                fontSize: fontSize,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          )
+        : Text(title, textAlign: TextAlign.center, maxLines: 2);
+    final btn = FilledButton(
       onPressed: onTap,
       style: FilledButton.styleFrom(
         backgroundColor: const Color(0xFFF9C433),
         foregroundColor: Colors.black87,
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
+        textStyle: TextStyle(
+          fontSize: fontSize,
+          fontWeight: FontWeight.bold,
+        ),
       ),
-      child: Text(title),
+      child: label,
     );
+    if (fullWidth) {
+      return SizedBox(width: double.infinity, child: btn);
+    }
+    return btn;
   }
 }
 
@@ -368,6 +506,12 @@ class _ActiveGamesPanel extends StatelessWidget {
   final void Function(String) onQuit;
   final void Function(String?) onQuitComputer;
 
+  /// I 3-kolonne tablet: smallere kort. På telefon: næsten fuld bredde.
+  final bool useWideCardFraction;
+
+  /// Mindre «Aktive spil»-overskrift i smalt højrefelt (telefon 1/3).
+  final bool compactHeader;
+
   const _ActiveGamesPanel({
     required this.kidId,
     required this.games,
@@ -375,6 +519,8 @@ class _ActiveGamesPanel extends StatelessWidget {
     required this.onWithdraw,
     required this.onQuit,
     required this.onQuitComputer,
+    this.useWideCardFraction = true,
+    this.compactHeader = false,
   });
 
   @override
@@ -385,63 +531,84 @@ class _ActiveGamesPanel extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, constraints) {
         final panelWidth = constraints.maxWidth;
-        // 30% mindre (0.75 * 0.7 ≈ 0.53) så der er plads til tre aktive spil
-        final cardWidth = panelWidth * 0.53;
+        final cardWidth = useWideCardFraction
+            ? panelWidth * 0.53
+            : (panelWidth * 0.92).clamp(160.0, 340.0);
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
-              padding: const EdgeInsets.all(8),
+              padding: EdgeInsets.fromLTRB(
+                6,
+                compactHeader ? 4 : 8,
+                6,
+                compactHeader ? 2 : 8,
+              ),
               child: Text(
                 'Aktive spil',
                 style: TextStyle(
-                  fontSize: isTablet ? 18 : 16,
+                  fontSize: compactHeader
+                      ? 13
+                      : (isTablet ? 18 : 16),
                   fontWeight: FontWeight.bold,
                   color: Colors.white,
                 ),
                 textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
               ),
             ),
-            Expanded(
-              child: loading
-                  ? const Center(
-                      child: CircularProgressIndicator(color: Colors.white))
-                  : games.isEmpty
-                      ? Center(
-                          child: Text(
-                            'Ingen aktive spil',
-                            style: TextStyle(
-                              fontSize: isTablet ? 14 : 12,
-                              color: Colors.white70,
+            Builder(
+              builder: (context) {
+                final listBody = loading
+                    ? const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      )
+                    : games.isEmpty
+                        ? Center(
+                            child: Text(
+                              'Ingen aktive spil',
+                              style: TextStyle(
+                                fontSize: isTablet ? 14 : 12,
+                                color: Colors.white70,
+                              ),
+                              textAlign: TextAlign.center,
                             ),
-                            textAlign: TextAlign.center,
-                          ),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          itemCount: games.length,
-                          itemBuilder: (context, i) => Padding(
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: Center(
-                              child: _GameCard(
-                                item: games[i],
-                                kidId: kidId,
-                                cardWidth: cardWidth,
-                                isTablet: isTablet,
-                                onWithdraw: games[i].invitationId != null
-                                    ? () => onWithdraw(games[i].invitationId!)
-                                    : null,
-                                onQuit: games[i].matchId != null
-                                    ? () => onQuit(games[i].matchId!)
-                                    : null,
-                                onQuitComputer: games[i].computerMatchId != null
-                                    ? () => onQuitComputer(games[i].computerMatchId)
-                                    : null,
+                          )
+                        : ListView.builder(
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            physics: const AlwaysScrollableScrollPhysics(
+                              parent: BouncingScrollPhysics(),
+                            ),
+                            itemCount: games.length,
+                            itemBuilder: (context, i) => Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: Center(
+                                child: _GameCard(
+                                  item: games[i],
+                                  kidId: kidId,
+                                  cardWidth: cardWidth,
+                                  isTablet: isTablet,
+                                  onWithdraw: games[i].invitationId != null
+                                      ? () => onWithdraw(games[i].invitationId!)
+                                      : null,
+                                  onQuit: games[i].matchId != null
+                                      ? () => onQuit(games[i].matchId!)
+                                      : null,
+                                  onQuitComputer:
+                                      games[i].computerMatchId != null
+                                          ? () => onQuitComputer(
+                                              games[i].computerMatchId,
+                                            )
+                                          : null,
+                                ),
                               ),
                             ),
-                          ),
-                        ),
+                          );
+
+                return Expanded(child: listBody);
+              },
             ),
           ],
         );

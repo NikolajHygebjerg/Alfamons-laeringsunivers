@@ -1,11 +1,11 @@
 {
-    "name": "alfamon_flutter",
-    "short_name": "alfamon_flutter",
+    "name": "Alfamon",
+    "short_name": "Alfamon",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#2C1810",
+    "theme_color": "#F9C433",
+    "description": "Alfamon – læring, bøger og spil for børn.",
     "orientation": "landscape",
     "prefer_related_applications": false,
     "icons": [

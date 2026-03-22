@@ -966,13 +966,29 @@ class _AlfamonUpgradeSheetState extends State<_AlfamonUpgradeSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final url = _previewImageUrl;
+    final media = MediaQuery.sizeOf(context);
+    final shortest = math.min(media.width, media.height);
+    // iPhone i landskab: ~390; iPad: typisk > 600
+    final compact = shortest < 520;
+    final padH = compact ? 14.0 : 20.0;
+    final padBottom = compact ? 16.0 : 28.0;
+    // Billedhøjde skaleret – undgå at Alfamon fylder hele sheetet på telefon
+    final previewH = compact
+        ? (shortest * 0.30).clamp(108.0, 168.0)
+        : 240.0;
+    final imgMaxW = (media.width - padH * 2) * (compact ? 0.68 : 0.88);
+    final petFallbackSize = compact ? 72.0 : 120.0;
+    final goldBtnSize = compact ? 52.0 : 60.0;
+    final goldBtnIcon = compact ? 30.0 : 36.0;
+    final coinSize = compact ? 40.0 : 52.0;
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
+      padding: EdgeInsets.fromLTRB(padH, 8, padH, padBottom),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
           Center(
             child: Container(
               width: 40,
@@ -983,32 +999,36 @@ class _AlfamonUpgradeSheetState extends State<_AlfamonUpgradeSheet> {
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          SizedBox(height: compact ? 8 : 12),
           SizedBox(
-            height: 240,
+            height: previewH,
+            width: double.infinity,
             child: Center(
               child: url != null && url.isNotEmpty
                   ? ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
+                      borderRadius: BorderRadius.circular(compact ? 14 : 20),
                       child: Image.network(
                         url,
-                        fit: BoxFit.contain,
                         key: ValueKey(url),
+                        width: imgMaxW,
+                        height: previewH,
+                        fit: BoxFit.contain,
+                        alignment: Alignment.center,
                         errorBuilder: (_, __, ___) => Icon(
                           Icons.pets,
-                          size: 120,
+                          size: petFallbackSize,
                           color: theme.colorScheme.primary,
                         ),
                       ),
                     )
                   : Icon(
                       Icons.pets,
-                      size: 120,
+                      size: petFallbackSize,
                       color: theme.colorScheme.primary,
                     ),
             ),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: compact ? 12 : 16),
           AlfamonEvolutionProgressBar(points: _previewPoints),
           const SizedBox(height: 8),
           Text(
@@ -1031,18 +1051,18 @@ class _AlfamonUpgradeSheetState extends State<_AlfamonUpgradeSheet> {
                 children: [
                   Image.asset(
                     'assets/moent.png',
-                    width: 52,
-                    height: 52,
+                    width: coinSize,
+                    height: coinSize,
                     fit: BoxFit.contain,
                     errorBuilder: (_, __, ___) => Icon(
                       Icons.monetization_on,
-                      size: 52,
+                      size: coinSize,
                       color: const Color(0xFFF9C433),
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  SizedBox(width: compact ? 6 : 10),
                   SizedBox(
-                    width: 76,
+                    width: compact ? 58 : 76,
                     child: FittedBox(
                       fit: BoxFit.scaleDown,
                       child: Text(
@@ -1051,18 +1071,18 @@ class _AlfamonUpgradeSheetState extends State<_AlfamonUpgradeSheet> {
                         style:
                             theme.textTheme.displaySmall?.copyWith(
                               fontWeight: FontWeight.w900,
-                              fontSize: 44,
+                              fontSize: compact ? 32 : 44,
                               height: 1,
                               color: theme.colorScheme.onSurface,
                             ) ??
-                            const TextStyle(
-                              fontSize: 44,
+                            TextStyle(
+                              fontSize: compact ? 32 : 44,
                               fontWeight: FontWeight.w900,
                             ),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 16),
+                  SizedBox(width: compact ? 8 : 16),
                   _roundGoldButton(
                     icon: Icons.remove,
                     onTap: _busy ? null : () => _bumpDelta(-1),
@@ -1071,10 +1091,10 @@ class _AlfamonUpgradeSheetState extends State<_AlfamonUpgradeSheet> {
                       Color(0xFFE57373),
                       Color(0xFFC62828),
                     ],
-                    size: 60,
-                    iconSize: 36,
+                    size: goldBtnSize,
+                    iconSize: goldBtnIcon,
                   ),
-                  const SizedBox(width: 6),
+                  SizedBox(width: compact ? 4 : 6),
                   Material(
                     color: theme.colorScheme.surfaceContainerHighest.withValues(
                       alpha: 0.85,
@@ -1084,18 +1104,20 @@ class _AlfamonUpgradeSheetState extends State<_AlfamonUpgradeSheet> {
                       onTap: _busy ? null : _openAmountEditor,
                       borderRadius: BorderRadius.circular(12),
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: compact ? 10 : 14,
+                          vertical: compact ? 8 : 10,
                         ),
                         child: ConstrainedBox(
-                          constraints: const BoxConstraints(minWidth: 52),
+                          constraints: BoxConstraints(
+                            minWidth: compact ? 44 : 52,
+                          ),
                           child: Text(
                             '$_pendingDelta',
                             textAlign: TextAlign.center,
                             style: theme.textTheme.headlineMedium?.copyWith(
                               fontWeight: FontWeight.w900,
-                              fontSize: 36,
+                              fontSize: compact ? 28 : 36,
                               height: 1,
                               color: _pendingDelta == 0
                                   ? theme.colorScheme.onSurface.withValues(
@@ -1108,18 +1130,18 @@ class _AlfamonUpgradeSheetState extends State<_AlfamonUpgradeSheet> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  SizedBox(width: compact ? 4 : 6),
                   _roundGoldButton(
                     icon: Icons.add,
                     onTap: _busy ? null : () => _bumpDelta(1),
-                    size: 60,
-                    iconSize: 36,
+                    size: goldBtnSize,
+                    iconSize: goldBtnIcon,
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          SizedBox(height: compact ? 14 : 20),
           Center(
             child: Tooltip(
               message: 'Godkend',
@@ -1141,7 +1163,7 @@ class _AlfamonUpgradeSheetState extends State<_AlfamonUpgradeSheet> {
                   onTap: _pendingDelta == 0 || _busy ? null : _onApprove,
                   borderRadius: BorderRadius.circular(20),
                   child: Padding(
-                    padding: const EdgeInsets.all(20),
+                    padding: EdgeInsets.all(compact ? 14 : 20),
                     child: _busy
                         ? const SizedBox(
                             width: 28,
@@ -1150,7 +1172,7 @@ class _AlfamonUpgradeSheetState extends State<_AlfamonUpgradeSheet> {
                           )
                         : Icon(
                             Icons.check_rounded,
-                            size: 36,
+                            size: compact ? 30 : 36,
                             color: _pendingDelta == 0
                                 ? theme.colorScheme.onSurface.withValues(
                                     alpha: 0.25,
@@ -1163,6 +1185,7 @@ class _AlfamonUpgradeSheetState extends State<_AlfamonUpgradeSheet> {
             ),
           ),
         ],
+        ),
       ),
     );
   }

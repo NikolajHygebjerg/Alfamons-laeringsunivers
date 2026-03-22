@@ -666,6 +666,13 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
     }
   }
 
+  /// True kun når barnet reelt ikke har kort at spille med (ikke midt i evnevalg med sidste kort).
+  bool get _shouldShowNoCardsPlaceholder {
+    if (_loading || _gameState == 'game_over') return false;
+    if (_kidCard != null) return false;
+    return _kidCards.isEmpty;
+  }
+
   @override
   Widget build(BuildContext context) {
     final shortestSide = MediaQuery.of(context).size.shortestSide;
@@ -745,7 +752,7 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
                         )
                       : _gameState == 'game_over'
                           ? _buildGameOver()
-                          : _kidCards.isEmpty
+                          : _shouldShowNoCardsPlaceholder
                               ? _buildNoCards()
                               : _buildGame(),
                 ),
@@ -801,13 +808,13 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
           if (strongest != null) ...[
             _GameOverAlfamon(
               card: strongest,
-              message: kidWon ? 'Du vandt!' : 'Du tabte!',
+              message: kidWon ? 'Du vandt!' : 'Computeren vinder spillet!',
               kidWon: kidWon,
             ),
             const SizedBox(height: 24),
           ] else ...[
             Text(
-              kidWon ? 'Du vandt!' : 'Du tabte!',
+              kidWon ? 'Du vandt!' : 'Computeren vinder spillet!',
               style: const TextStyle(
                 fontSize: 32,
                 fontWeight: FontWeight.w900,
@@ -854,50 +861,105 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
   /// Når man spiller kort: vis kortet og evnerne man kan vælge.
   Widget _buildChoosingLayout() {
     final kidCard = _kidCard!;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _ScoreCard(label: 'Dig', score: _kidScore),
-              Text(
-                'Runde $_roundNumber',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: Colors.white.withValues(alpha: 0.9),
-                ),
+    final isTablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+
+    final scoreRow = Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _ScoreCard(label: 'Dig', score: _kidScore),
+        Text(
+          'Runde $_roundNumber',
+          style: TextStyle(
+            fontSize: 14,
+            color: Colors.white.withValues(alpha: 0.9),
+          ),
+        ),
+        _ScoreCard(label: 'Computer', score: _computerScore),
+      ],
+    );
+
+    final strengths = kidCard.strengths
+        .map(
+          (s) => AlfamonStrength(
+            strengthIndex: s.strengthIndex,
+            name: s.name,
+            value: s.value,
+          ),
+        )
+        .toList();
+
+    final grid = StrengthChoiceGrid(
+      strengths: strengths,
+      onSelect: _selectStrength,
+      compact: !isTablet,
+    );
+
+    if (isTablet) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          children: [
+            scoreRow,
+            const SizedBox(height: 16),
+            Center(
+              child: AlfamonCard(
+                card: kidCard.toAlfamonCardData(),
+                width: _gameCardWidth,
               ),
-              _ScoreCard(label: 'Computer', score: _computerScore),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Center(
-            child: AlfamonCard(
-              card: kidCard.toAlfamonCardData(),
-              width: _gameCardWidth,
             ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Vælg styrke',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Colors.white,
+            const SizedBox(height: 16),
+            Text(
+              'Vælg styrke',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          StrengthChoiceGrid(
-            strengths: kidCard.strengths
-                .map((s) => AlfamonStrength(
-                      strengthIndex: s.strengthIndex,
-                      name: s.name,
-                      value: s.value,
-                    ))
-                .toList(),
-            onSelect: _selectStrength,
+            const SizedBox(height: 12),
+            grid,
+          ],
+        ),
+      );
+    }
+
+    // Telefon: kort + evner side om side uden scroll.
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          scoreRow,
+          const SizedBox(height: 8),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                AlfamonCard(
+                  card: kidCard.toAlfamonCardData(),
+                  width: _gameCardWidth,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        'Vælg styrke',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      grid,
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

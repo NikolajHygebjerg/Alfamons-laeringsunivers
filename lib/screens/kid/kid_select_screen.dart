@@ -203,7 +203,15 @@ class _KidSelectScreenState extends State<KidSelectScreen> {
                             )
                           : Padding(
                               padding: const EdgeInsets.all(16),
-                              child: Column(
+                              child: LayoutBuilder(
+                                builder: (context, _) {
+                                  final shortest =
+                                      MediaQuery.sizeOf(context).shortestSide;
+                                  final isPhone = shortest < 600;
+                                  // Telefon: færre, større «login»-kort; tablet: tæt grid
+                                  final crossCount = isPhone ? 2 : 6;
+                                  final aspect = isPhone ? 0.78 : 0.85;
+                                  return Column(
                                 children: [
                                   const Text(
                                     'Vælg barn',
@@ -218,10 +226,10 @@ class _KidSelectScreenState extends State<KidSelectScreen> {
                                     child: GridView.builder(
                                       gridDelegate:
                                           SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount: 6,
+                                        crossAxisCount: crossCount,
                                         crossAxisSpacing: 8,
                                         mainAxisSpacing: 8,
-                                        childAspectRatio: 0.85,
+                                        childAspectRatio: aspect,
                                       ),
                                       itemCount: _kids.length,
                                       itemBuilder: (_, i) {
@@ -235,6 +243,8 @@ class _KidSelectScreenState extends State<KidSelectScreen> {
                                     ),
                                   ),
                                 ],
+                                  );
+                                },
                               ),
                             ),
                 ),

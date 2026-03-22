@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
@@ -12,7 +14,11 @@ import 'widgets/gold_coins_earned_overlay.dart';
 import 'widgets/kid_gold_treasury_corner.dart';
 import 'widgets/kid_session_nav_button.dart';
 
-/// Dagens opgaver – baggrund `Baggrundopgaver.svg`, opgaver øverst, kiste som på hjem.
+/// Horisont i `Baggrundopgaver.svg` som andel fra skærmens top (0–1).
+/// Bogskab placeres så dets **midte** ligger her ≈ halvdelen over horisonten.
+const double _kidTasksBogskabHorizonFromTopFraction = 0.54;
+
+/// Dagens opgaver – baggrund `Baggrundopgaver.svg`, bogskab → bibliotek, kiste som på hjem.
 class KidTasksScreen extends StatefulWidget {
   const KidTasksScreen({super.key, required this.kidId});
 
@@ -261,6 +267,36 @@ class _KidTasksScreenState extends State<KidTasksScreen> {
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final w = MediaQuery.sizeOf(context).width;
+    final h = MediaQuery.sizeOf(context).height;
+    final shortest = math.min(w, h);
+    final isPhone = shortest < 600;
+    final treasuryClearance =
+        KidGoldTreasuryCorner.clearanceWidthFromScreenRight(
+      screenWidth: w,
+      shortestSide: shortest,
+    );
+    final shelfW = (w * 0.26).clamp(96.0, 260.0);
+    final bottomY = bottomInset > 0 ? bottomInset : 4.0;
+    // bogskab.png er kvadratisk → højde ≈ shelfW; midte på horisontlinjen i baggrunden
+    final shelfH = shelfW;
+    final horizonFromBottom =
+        h * (1.0 - _kidTasksBogskabHorizonFromTopFraction);
+    final bogskabBottom =
+        math.max(0.0, horizonFromBottom - shelfH / 2);
+    final double? bogskabLeft = isPhone
+        ? () {
+            final chestLeft =
+                w - kidZoneHorizontalPadding - treasuryClearance;
+            final birdZoneRight = w * 0.40;
+            final midX = (birdZoneRight + chestLeft) / 2;
+            final l = midX - shelfW / 2;
+            return l.clamp(
+              kidZoneHorizontalPadding,
+              w - shelfW - kidZoneHorizontalPadding,
+            );
+          }()
+        : null;
 
     return Scaffold(
       body: Stack(
@@ -301,14 +337,69 @@ class _KidTasksScreenState extends State<KidTasksScreen> {
           ),
           Positioned(
             right: kidZoneHorizontalPadding,
-            bottom: bottomInset + 12,
+            bottom: isPhone ? 0 : bottomY,
+            child: isPhone
+                ? SafeArea(
+                    top: false,
+                    left: false,
+                    right: false,
+                    bottom: true,
+                    minimum: EdgeInsets.zero,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () =>
+                            context.push('/kid/alfamons/${widget.kidId}'),
+                        borderRadius: BorderRadius.circular(12),
+                        child: KidGoldTreasuryCorner(goldCoins: _goldCoins),
+                      ),
+                    ),
+                  )
+                : Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () =>
+                          context.push('/kid/alfamons/${widget.kidId}'),
+                      borderRadius: BorderRadius.circular(12),
+                      child: KidGoldTreasuryCorner(goldCoins: _goldCoins),
+                    ),
+                  ),
+          ),
+          // Bibliotek (bogskab) – telefon: centreret mellem fugl (venstre felt) og kiste; ellers til venstre for kisten.
+          Positioned(
+            left: bogskabLeft,
+            right: isPhone
+                ? null
+                : kidZoneHorizontalPadding + treasuryClearance + 10,
+            bottom: bogskabBottom,
             child: Material(
               color: Colors.transparent,
-              child: InkWell(
-                onTap: () =>
-                    context.push('/kid/alfamons/${widget.kidId}'),
-                borderRadius: BorderRadius.circular(12),
-                child: KidGoldTreasuryCorner(goldCoins: _goldCoins),
+              child: Semantics(
+                button: true,
+                label: 'Bibliotek',
+                child: InkWell(
+                  onTap: () =>
+                      context.push('/kid/library/${widget.kidId}'),
+                  borderRadius: BorderRadius.circular(12),
+                  splashColor: Colors.white24,
+                  highlightColor: Colors.white10,
+                  child: Image.asset(
+                    'assets/bogskab.png',
+                    width: shelfW,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.medium,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, _, _) => SizedBox(
+                      width: shelfW,
+                      height: shelfW * 0.9,
+                      child: const Icon(
+                        Icons.menu_book,
+                        color: Colors.white,
+                        size: 48,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
@@ -339,6 +430,7 @@ class _TaskCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isPhone = MediaQuery.sizeOf(context).shortestSide < 600;
     final ti = instance;
     final isCounter = ti.task.mode == 'counter';
     final points = isCounter
@@ -461,15 +553,24 @@ class _TaskCard extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: const Color(0xFFF9C433),
                     foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+                    padding: EdgeInsets.symmetric(
+                      vertical: isPhone ? 12 : 8,
+                      horizontal: isPhone ? 10 : 6,
+                    ),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   child: isCompleting
-                      ? const Text('...', style: TextStyle(fontSize: 11))
+                      ? Text(
+                          '...',
+                          style: TextStyle(fontSize: isPhone ? 14 : 11),
+                        )
                       : Text(
                           isCounter ? 'Færdig ($count)' : 'Færdig',
-                          style: const TextStyle(fontSize: 11),
+                          style: TextStyle(
+                            fontSize: isPhone ? 14 : 11,
+                            fontWeight: isPhone ? FontWeight.w800 : null,
+                          ),
                           overflow: TextOverflow.ellipsis,
                           textAlign: TextAlign.center,
                         ),

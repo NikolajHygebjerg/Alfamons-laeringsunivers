@@ -103,6 +103,14 @@ flutter_launcher_icons:
   android: true
   ios: true
   remove_alpha_ios: true # App Store kræver ikke gennemsigtighed på app-ikon
+  web:
+    generate: true
+    image_path: "assets/nytikon.png"
+    background_color: "#2C1810"
+    theme_color: "#F9C433"
+  windows:
+    generate: true
+    image_path: "assets/nytikon.png"
   macos:
     generate: true
     image_path: "assets/nytikon.png"

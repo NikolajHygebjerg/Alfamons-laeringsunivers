@@ -560,14 +560,17 @@ class AlfamonCard extends StatelessWidget {
 
 /// Evneknapper til valg af styrke – altid samme layout og farver.
 /// Kolonne 1: Power, Mind, Armor. Kolonne 2: Speed, Magic, Charm.
+/// [compact] = telefon: én smal kolonne (til side om side med kort uden scroll).
 class StrengthChoiceGrid extends StatelessWidget {
   final List<AlfamonStrength> strengths;
   final void Function(int index) onSelect;
+  final bool compact;
 
   const StrengthChoiceGrid({
     super.key,
     required this.strengths,
     required this.onSelect,
+    this.compact = false,
   });
 
   @override
@@ -580,7 +583,7 @@ class StrengthChoiceGrid extends StatelessWidget {
       return list.isEmpty ? null : list.first;
     }
 
-    Widget buildChip(int index) {
+    Widget buildChip(int index, {required bool tight}) {
       final s = getStrength(index);
       if (s == null) return const SizedBox.shrink();
       final color = index < strengthColors.length
@@ -588,8 +591,15 @@ class StrengthChoiceGrid extends StatelessWidget {
           : Colors.grey;
       final icon = index < strengthIcons.length ? strengthIcons[index] : Icons.help_outline;
 
+      final hPad = tight ? 8.0 : 12.0;
+      final vPad = tight ? 6.0 : 12.0;
+      final iconSz = tight ? 16.0 : 20.0;
+      final fontSz = tight ? 11.0 : 14.0;
+      final minW = tight ? 0.0 : 100.0;
+      final maxW = tight ? double.infinity : 140.0;
+
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: EdgeInsets.symmetric(vertical: tight ? 2 : 4),
         child: Material(
           color: color.withValues(alpha: 0.9),
           borderRadius: BorderRadius.circular(8),
@@ -597,8 +607,8 @@ class StrengthChoiceGrid extends StatelessWidget {
             onTap: () => onSelect(index),
             borderRadius: BorderRadius.circular(8),
             child: Container(
-              constraints: const BoxConstraints(minWidth: 100, maxWidth: 140),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              constraints: BoxConstraints(minWidth: minW, maxWidth: maxW),
+              padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.white24, width: 1),
@@ -606,17 +616,18 @@ class StrengthChoiceGrid extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(icon, color: Colors.white, size: 20),
-                  const SizedBox(width: 8),
+                  Icon(icon, color: Colors.white, size: iconSz),
+                  SizedBox(width: tight ? 6 : 8),
                   Flexible(
                     child: Text(
                       '${s.name}: ${s.value}',
-                      style: const TextStyle(
-                        color: Color(0xFFE8DCC8),
+                      style: TextStyle(
+                        color: const Color(0xFFE8DCC8),
                         fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                        fontSize: fontSz,
                       ),
                       overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   ),
                 ],
@@ -627,18 +638,27 @@ class StrengthChoiceGrid extends StatelessWidget {
       );
     }
 
+    if (compact) {
+      const order = [0, 1, 2, 3, 4, 5];
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: order.map((i) => buildChip(i, tight: true)).toList(),
+      );
+    }
+
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Column(
           mainAxisSize: MainAxisSize.min,
-          children: col1.map((i) => buildChip(i)).toList(),
+          children: col1.map((i) => buildChip(i, tight: false)).toList(),
         ),
         const SizedBox(width: 12),
         Column(
           mainAxisSize: MainAxisSize.min,
-          children: col2.map((i) => buildChip(i)).toList(),
+          children: col2.map((i) => buildChip(i, tight: false)).toList(),
         ),
       ],
     );

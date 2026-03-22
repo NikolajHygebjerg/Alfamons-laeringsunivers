@@ -47,6 +47,8 @@ class _KidTodayScreenState extends State<KidTodayScreen> {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final topPad = MediaQuery.paddingOf(context).top;
     final size = MediaQuery.sizeOf(context);
+    final shortest = size.shortestSide;
+    final isPhone = shortest < 600;
 
     return Scaffold(
       body: Stack(
@@ -105,29 +107,59 @@ class _KidTodayScreenState extends State<KidTodayScreen> {
           ),
           Positioned(
             right: kidZoneHorizontalPadding,
-            bottom: bottomInset + 12,
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () async {
-                  await context.push('/kid/alfamons/${widget.kidId}');
-                  if (mounted) _loadGold();
-                },
-                borderRadius: BorderRadius.circular(12),
-                child: _loadingGold
-                    ? const SizedBox(
-                        width: 80,
-                        height: 100,
-                        child: Center(
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        ),
-                      )
-                    : KidGoldTreasuryCorner(goldCoins: _goldCoins),
-              ),
-            ),
+            bottom: isPhone ? 0 : (bottomInset > 0 ? bottomInset : 4),
+            child: isPhone
+                ? SafeArea(
+                    top: false,
+                    left: false,
+                    right: false,
+                    bottom: true,
+                    minimum: EdgeInsets.zero,
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () async {
+                          await context.push('/kid/alfamons/${widget.kidId}');
+                          if (mounted) _loadGold();
+                        },
+                        borderRadius: BorderRadius.circular(12),
+                        child: _loadingGold
+                            ? const SizedBox(
+                                width: 80,
+                                height: 100,
+                                child: Center(
+                                  child: CircularProgressIndicator(
+                                    color: Colors.white,
+                                    strokeWidth: 2,
+                                  ),
+                                ),
+                              )
+                            : KidGoldTreasuryCorner(goldCoins: _goldCoins),
+                      ),
+                    ),
+                  )
+                : Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () async {
+                        await context.push('/kid/alfamons/${widget.kidId}');
+                        if (mounted) _loadGold();
+                      },
+                      borderRadius: BorderRadius.circular(12),
+                      child: _loadingGold
+                          ? const SizedBox(
+                              width: 80,
+                              height: 100,
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                ),
+                              ),
+                            )
+                          : KidGoldTreasuryCorner(goldCoins: _goldCoins),
+                    ),
+                  ),
           ),
         ],
       ),

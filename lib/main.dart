@@ -28,6 +28,7 @@ import 'screens/kid/kid_today_screen.dart';
 import 'screens/kid/kid_tasks_screen.dart';
 import 'screens/kid/kid_week_screen.dart';
 import 'screens/kid/kid_library_screen.dart';
+import 'screens/kid/kid_library_group_screen.dart';
 import 'screens/kid/kid_alfamons_screen.dart';
 import 'screens/kid/kid_book_reader_screen.dart';
 import 'screens/kid/kid_achievements_screen.dart';
@@ -279,6 +280,14 @@ GoRouter _router(AuthProvider authProvider) => GoRouter(
             final kidId = state.pathParameters['kidId']!;
             final bookId = state.pathParameters['bookId']!;
             return KidBookReaderScreen(kidId: kidId, bookId: bookId);
+          },
+        ),
+        GoRoute(
+          path: 'group/:groupId',
+          builder: (context, state) {
+            final kidId = state.pathParameters['kidId']!;
+            final groupId = state.pathParameters['groupId']!;
+            return KidLibraryGroupScreen(kidId: kidId, groupId: groupId);
           },
         ),
       ],

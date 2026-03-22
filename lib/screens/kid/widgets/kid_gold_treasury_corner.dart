@@ -13,6 +13,8 @@ class KidGoldTreasuryCorner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final screenW = MediaQuery.sizeOf(context).width;
+    final shortest = MediaQuery.sizeOf(context).shortestSide;
+    final isPhone = shortest < 600;
     final chestW = (screenW * 0.2).clamp(72.0, 220.0);
 
     const textShadows = [
@@ -23,6 +25,78 @@ class KidGoldTreasuryCorner extends StatelessWidget {
       ),
     ];
 
+    final chest = Image.asset(
+      'assets/kiste.png',
+      width: chestW,
+      fit: BoxFit.contain,
+      filterQuality: FilterQuality.medium,
+      gaplessPlayback: true,
+      errorBuilder: (context, error, stackTrace) => SizedBox(
+        width: chestW,
+        height: chestW * 0.85,
+        child: Icon(
+          Icons.inventory_2,
+          size: chestW * 0.5,
+          color: Colors.amber,
+        ),
+      ),
+    );
+
+    /// Telefon: større tal/tekst til venstre, kiste i bunden (samme baseline).
+    if (isPhone) {
+      final coinFont =
+          (shortest * 0.072).clamp(26.0, 36.0);
+      final labelFont =
+          (shortest * 0.028).clamp(11.0, 14.0);
+      return Material(
+        color: Colors.transparent,
+        clipBehavior: Clip.none,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.end,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(right: 10, bottom: 4),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$goldCoins',
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: coinFont,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      height: 1.05,
+                      shadows: textShadows,
+                    ),
+                  ),
+                  Text(
+                    'GULDMØNTER',
+                    style: TextStyle(
+                      fontSize: labelFont,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.5,
+                      color: Colors.white,
+                      shadows: const [
+                        Shadow(
+                          offset: Offset(1, 1),
+                          blurRadius: 3,
+                          color: Colors.black54,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            chest,
+          ],
+        ),
+      );
+    }
+
     return Material(
       color: Colors.transparent,
       clipBehavior: Clip.none,
@@ -30,22 +104,7 @@ class KidGoldTreasuryCorner extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Image.asset(
-            'assets/kiste.png',
-            width: chestW,
-            fit: BoxFit.contain,
-            filterQuality: FilterQuality.medium,
-            gaplessPlayback: true,
-            errorBuilder: (context, error, stackTrace) => SizedBox(
-              width: chestW,
-              height: chestW * 0.85,
-              child: Icon(
-                Icons.inventory_2,
-                size: chestW * 0.5,
-                color: Colors.amber,
-              ),
-            ),
-          ),
+          chest,
           const SizedBox(height: 4),
           SizedBox(
             width: chestW,
@@ -90,5 +149,15 @@ class KidGoldTreasuryCorner extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// Horisontal afstand fra skærmhøjre til venstre kant af kiste-widget (til placering af fx bogskab).
+  static double clearanceWidthFromScreenRight({
+    required double screenWidth,
+    required double shortestSide,
+  }) {
+    final chestW = (screenWidth * 0.2).clamp(72.0, 220.0);
+    if (shortestSide >= 600) return chestW;
+    return chestW + 118;
   }
 }

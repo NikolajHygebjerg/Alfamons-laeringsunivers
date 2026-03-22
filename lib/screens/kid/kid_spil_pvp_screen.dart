@@ -980,26 +980,85 @@ class _KidSpilPvpScreenState extends State<KidSpilPvpScreen> {
 
   Widget _buildPickStrength() {
     final card = _myCard!;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
+    final isTablet = MediaQuery.sizeOf(context).shortestSide >= 600;
+    final strengths = card.strengths
+        .map((s) => AlfamonStrength(
+              strengthIndex: s.strengthIndex,
+              name: s.name,
+              value: s.value,
+            ))
+        .toList();
+    final grid = StrengthChoiceGrid(
+      strengths: strengths,
+      onSelect: _pickStrength,
+      compact: !isTablet,
+    );
+
+    final scoreRow = Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        _ScoreCard(label: 'Dig', score: _myScore),
+        Text(
+          'Runde $_roundNumber',
+          style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.9)),
+        ),
+        _ScoreCard(label: _opponentName ?? 'Modstander', score: _opponentScore),
+      ],
+    );
+
+    if (isTablet) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          children: [
+            scoreRow,
+            const SizedBox(height: 16),
+            AlfamonCard(card: _toCardData(card), width: 120),
+            const SizedBox(height: 16),
+            const Text(
+              'Vælg styrke',
+              style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+            grid,
+          ],
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _ScoreCard(label: 'Dig', score: _myScore),
-              Text('Runde $_roundNumber', style: TextStyle(fontSize: 14, color: Colors.white.withValues(alpha: 0.9))),
-              _ScoreCard(label: _opponentName ?? 'Modstander', score: _opponentScore),
-            ],
-          ),
-          const SizedBox(height: 16),
-          AlfamonCard(card: _toCardData(card), width: 120),
-          const SizedBox(height: 16),
-          const Text('Vælg styrke', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-          StrengthChoiceGrid(
-            strengths: card.strengths.map((s) => AlfamonStrength(strengthIndex: s.strengthIndex, name: s.name, value: s.value)).toList(),
-            onSelect: _pickStrength,
+          scoreRow,
+          const SizedBox(height: 8),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                AlfamonCard(card: _toCardData(card), width: _gameCardWidth),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        'Vælg styrke',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      grid,
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),

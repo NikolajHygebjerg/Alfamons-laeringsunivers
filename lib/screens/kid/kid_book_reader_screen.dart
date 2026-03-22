@@ -237,7 +237,11 @@ class _KidBookReaderScreenState extends State<KidBookReaderScreen> {
         clipBehavior: Clip.none,
         children: [
           if (!_bookOpened)
-            _BuildCoverView(coverUrl: coverUrl, title: _title ?? 'Bog', onTap: _openBook)
+            _BuildCoverView(
+              coverUrl: coverUrl,
+              title: _title ?? 'Bog',
+              onTap: _openBook,
+            )
           else
             _BuildBookContent(
               pages: _pages,
@@ -251,19 +255,28 @@ class _KidBookReaderScreenState extends State<KidBookReaderScreen> {
               onCycleTextCase: _cycleTextCase,
             ),
           Positioned(
-            top: 16,
-            left: 16,
-            child: GestureDetector(
-              onTap: () => context.go('/kid/library/${widget.kidId}'),
-              child: Container(
-                width: 80,
-                height: 80,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 2))],
+            top: 0,
+            left: 0,
+            child: SafeArea(
+              minimum: const EdgeInsets.all(12),
+              child: GestureDetector(
+                onTap: () => context.go('/kid/library/${widget.kidId}'),
+                child: Container(
+                  width: 80,
+                  height: 80,
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 8,
+                        offset: Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.close, size: 44, color: Colors.black87),
                 ),
-                child: const Icon(Icons.close, size: 44, color: Colors.black87),
               ),
             ),
           ),
@@ -282,7 +295,11 @@ class _BuildCoverView extends StatelessWidget {
   final String title;
   final VoidCallback onTap;
 
-  const _BuildCoverView({this.coverUrl, required this.title, required this.onTap});
+  const _BuildCoverView({
+    this.coverUrl,
+    required this.title,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -295,7 +312,11 @@ class _BuildCoverView extends StatelessWidget {
           coverUrl != null && coverUrl!.isNotEmpty
               ? Positioned.fill(
                   child: Center(
-                    child: Image.network(coverUrl!, fit: BoxFit.contain, errorBuilder: (_, __, ___) => _placeholder()),
+                    child: Image.network(
+                      coverUrl!,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, __, ___) => _placeholder(),
+                    ),
                   ),
                 )
               : _placeholder(),
@@ -307,8 +328,14 @@ class _BuildCoverView extends StatelessWidget {
               child: Center(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)),
-                  child: const Text('Tryk for at åbne', style: TextStyle(color: Colors.white, fontSize: 14)),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Tryk for at åbne',
+                    style: TextStyle(color: Colors.white, fontSize: 14),
+                  ),
                 ),
               ),
             ),
@@ -437,6 +464,9 @@ class _BuildBookContent extends StatelessWidget {
       return const Center(child: Text('Ingen sider', style: TextStyle(color: Colors.white)));
     }
 
+    final navIconSize =
+        MediaQuery.sizeOf(context).width < 400 ? 40.0 : 48.0;
+
     final spread = pages[currentIndex];
     final isCover = currentIndex == 0;
     final leftText = spread['left_text'] as String? ?? '';
@@ -479,43 +509,70 @@ class _BuildBookContent extends StatelessWidget {
               ),
             ],
           ),
-        Positioned(
-          left: 0,
-          top: 0,
-          bottom: 0,
-          child: Center(
-            child: IconButton(
-              icon: const Icon(Icons.arrow_back, size: 48, color: Colors.black),
-              onPressed: canGoBack ? onPrev : (isCover ? onClose : null),
-              style: IconButton.styleFrom(backgroundColor: isCover ? Colors.white.withOpacity(0.9) : Colors.transparent),
-            ),
-          ),
-        ),
-        Positioned(
-          right: 0,
-          top: 0,
-          bottom: 0,
-          child: Center(
-            child: IconButton(
-              icon: Icon(isLast ? Icons.check_circle : Icons.arrow_forward, size: 48, color: Colors.black),
-              onPressed: onNext,
-              style: IconButton.styleFrom(backgroundColor: Colors.white.withOpacity(0.85)),
-            ),
-          ),
-        ),
+        // Piler i bunden (SafeArea) så de ikke ligger under Dynamic Island /
+        // højttalerfelt på iPhone. Aa midt mellem pilerne.
         Positioned(
           left: 0,
           right: 0,
-          bottom: 24,
-          child: Center(
-            child: TextButton(
-              onPressed: onCycleTextCase,
-              style: TextButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+          bottom: 0,
+          child: SafeArea(
+            top: false,
+            left: false,
+            right: false,
+            minimum: const EdgeInsets.only(bottom: 4),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(4, 0, 4, 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: Icon(
+                      Icons.arrow_back,
+                      size: navIconSize,
+                      color: Colors.black,
+                    ),
+                    onPressed: canGoBack ? onPrev : (isCover ? onClose : null),
+                    style: IconButton.styleFrom(
+                      backgroundColor: isCover
+                          ? Colors.white.withValues(alpha: 0.92)
+                          : Colors.white.withValues(alpha: 0.88),
+                    ),
+                  ),
+                  Expanded(
+                    child: Center(
+                      child: TextButton(
+                        onPressed: onCycleTextCase,
+                        style: TextButton.styleFrom(
+                          backgroundColor: Colors.white,
+                          foregroundColor: Colors.black,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 20,
+                            vertical: 10,
+                          ),
+                        ),
+                        child: Text(
+                          _caseButtonLabel(),
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(
+                      isLast ? Icons.check_circle : Icons.arrow_forward,
+                      size: navIconSize,
+                      color: Colors.black,
+                    ),
+                    onPressed: onNext,
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.white.withValues(alpha: 0.88),
+                    ),
+                  ),
+                ],
               ),
-              child: Text(_caseButtonLabel(), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             ),
           ),
         ),
