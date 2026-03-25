@@ -1,6 +1,6 @@
-# Alfamon Flutter
+# Alfamons læringsunivers (Flutter)
 
-Flutter-version af Alfamon-appen – en opgavemotiverings-app til børn med Alfamon-avatars, point og spil.
+Flutter-versionen af appen – opgaver, bøger og spil for børn med Alfamon-avatars og point.
 
 ## Funktioner
 

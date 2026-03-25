@@ -1,0 +1,33 @@
+Windows-udgivelse til egen hjemmeside – Alfamons læringsunivers
+===============================================
+
+1) Byg-maskine
+   - Windows 10/11, 64-bit
+   - Flutter SDK (stable), på PATH
+   - Visual Studio 2022 med workload "Desktop development with C++"
+
+2) Byg og zip
+   Åbn PowerShell i repo-roden (alfamon_flutter):
+   powershell -ExecutionPolicy Bypass -File scripts\package_windows_release.ps1
+
+   Output:
+   - dist\windows\Alfamons-Windows-<version>\   (mappe med .exe + data + dll)
+   - dist\windows\Alfamons-Windows-<version>.zip
+
+3) Hjemmeside
+   - Læg .zip et sted brugere kan downloade (HTTPS anbefales).
+   - Kort tekst til brugere: "Udpak zip til en mappe, dobbeltklik Alfamons.exe."
+   - Hele indholdet af mappen skal med – ikke kun .exe.
+
+4) Afhængigheder på kundens PC
+   - De fleste Windows 10/11 har allerede Visual C++ runtime.
+   - Hvis appen ikke starter, kan de installere "Microsoft Visual C++ Redistributable"
+     (x64) fra Microsoft.
+
+5) Signering (valgfrit)
+   - Uden kodesignering viser SmartScreen evt. advarsel ved første kørsel.
+   - For færre advarsler: signér Alfamons.exe med et Authenticode-certifikat.
+
+6) Version
+   - Sæt version i pubspec.yaml under "version: …" før du laver udgivelses-build.
+   - Zip-navnet følger den version.

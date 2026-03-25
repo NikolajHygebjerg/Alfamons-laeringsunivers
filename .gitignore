@@ -34,6 +34,9 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Windows udgivelse (lokale zip-mapper fra scripts/package_windows_release.ps1)
+/dist/
+
 # Symbolication related
 app.*.symbols
 

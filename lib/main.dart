@@ -43,6 +43,7 @@ import 'services/kid_invitation_service.dart';
 import 'services/kid_turn_notification_service.dart';
 import 'services/notification_service.dart';
 import 'widgets/pending_challenge_handler.dart';
+import 'app_branding.dart';
 
 final _navigatorKey = GlobalKey<NavigatorState>();
 String? _startupKidId;
@@ -96,7 +97,7 @@ class AlfamonApp extends StatelessWidget {
       child: PendingChallengeHandler(
         navigatorKey: _navigatorKey,
         child: MaterialApp.router(
-          title: 'Alfamon',
+          title: kAppDisplayName,
           debugShowCheckedModeBanner: false,
           theme: ThemeData(
             colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFF9C433)),

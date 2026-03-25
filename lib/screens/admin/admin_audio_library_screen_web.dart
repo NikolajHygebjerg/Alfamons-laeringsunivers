@@ -19,7 +19,7 @@ class AdminAudioLibraryScreen extends StatelessWidget {
         child: Padding(
           padding: EdgeInsets.all(24),
           child: Text(
-            'Lydbibliotek med mikrofon og filer understøttes i Alfamon på iPad, iPhone eller macOS – '
+            'Lydbibliotek med mikrofon og filer understøttes i Alfamons læringsunivers på iPad, iPhone eller macOS – '
             'ikke i Chrome/browser. Kør appen der for at administrere lydfiler.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 16, height: 1.4),

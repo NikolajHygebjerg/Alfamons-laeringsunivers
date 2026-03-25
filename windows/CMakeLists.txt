@@ -4,7 +4,8 @@ project(alfamon_flutter LANGUAGES CXX)
 
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
-set(BINARY_NAME "alfamon_flutter")
+# Vist for brugere (.exe på hjemmeside); pubspec-pakkenavn er uændret.
+set(BINARY_NAME "Alfamons")
 
 # Explicitly opt in to modern CMake behaviors to avoid warnings with recent
 # versions of CMake.

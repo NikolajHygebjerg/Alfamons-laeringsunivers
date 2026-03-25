@@ -1,11 +1,11 @@
 {
-    "name": "Alfamon",
-    "short_name": "Alfamon",
+    "name": "Alfamons læringsunivers",
+    "short_name": "Alfamons",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#2C1810",
     "theme_color": "#F9C433",
-    "description": "Alfamon – læring, bøger og spil for børn.",
+    "description": "Alfamons læringsunivers – opgaver, bøger og spil for børn.",
     "orientation": "landscape",
     "prefer_related_applications": false,
     "icons": [
