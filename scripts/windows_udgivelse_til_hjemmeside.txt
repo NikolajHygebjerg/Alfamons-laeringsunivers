@@ -7,7 +7,7 @@ Windows-udgivelse til egen hjemmeside – Alfamons læringsunivers
    - Visual Studio 2022 med workload "Desktop development with C++"
 
 2) Byg og zip
-   Åbn PowerShell i repo-roden (alfamon_flutter):
+   Åbn PowerShell i repo-roden:
    powershell -ExecutionPolicy Bypass -File scripts\package_windows_release.ps1
 
    Output:
@@ -31,3 +31,9 @@ Windows-udgivelse til egen hjemmeside – Alfamons læringsunivers
 6) Version
    - Sæt version i pubspec.yaml under "version: …" før du laver udgivelses-build.
    - Zip-navnet følger den version.
+
+7) CMake: "No target alfamon_flutter"
+   - Slet mappen build/windows og kør: flutter clean && flutter pub get
+     && flutter build windows --release
+   - CMake-target hedder alfamon_flutter (matcher pubspec name); OUTPUT_NAME giver
+     alligevel Alfamons.exe.
