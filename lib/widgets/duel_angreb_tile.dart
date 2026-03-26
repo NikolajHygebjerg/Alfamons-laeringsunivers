@@ -50,8 +50,9 @@ class DuelAngrebTile extends StatelessWidget {
       imageWidget = _placeholder(name);
     }
 
-    final flipOverride = path != null && path.contains('Atiachangreb2');
-    final shouldFlip = flipOverride ? faceRight : !faceRight;
+    // PNG'erne er ensrettede (alle vender mod højre): spiller = faceRight true (intet flip),
+    // modstander = faceRight false (flip → vender venstre).
+    final shouldFlip = !faceRight;
     if (shouldFlip) {
       imageWidget = Transform(
         alignment: Alignment.center,

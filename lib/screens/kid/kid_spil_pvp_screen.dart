@@ -13,7 +13,8 @@ import 'widgets/alfamon_card.dart';
 import 'widgets/kid_session_nav_button.dart';
 
 /// Angreb-billeder: samme som computer-spil.
-const bool _angrebImagesFaceRight = false;
+/// Angreb-PNG'er vender mod højre i filen; spiller vises uden flip, modstander spejlvendes.
+const bool _angrebImagesFaceRight = true;
 
 /// PvP kamp – begge vælger kort, derefter evne. Kampen starter når begge har valgt.
 class KidSpilPvpScreen extends StatefulWidget {

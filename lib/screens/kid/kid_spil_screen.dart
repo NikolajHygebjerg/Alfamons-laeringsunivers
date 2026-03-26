@@ -15,7 +15,8 @@ import 'widgets/kid_session_nav_button.dart';
 
 /// Angreb-billeder: true = de kigger til højre i originalen. false = de kigger til venstre.
 /// Skift denne hvis figurerne vender forkert – eller tilret alle billeder til at kigge højre.
-const bool _angrebImagesFaceRight = false;
+/// Angreb-PNG'er vender mod højre i filen; spiller vises uden flip, modstander spejlvendes.
+const bool _angrebImagesFaceRight = true;
 
 class _GameCard {
   final String id;
