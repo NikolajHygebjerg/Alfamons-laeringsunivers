@@ -1,14 +1,15 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/audio_cache_service.dart';
+import 'kid_layout_constants.dart';
 import 'widgets/kid_session_nav_button.dart';
 
-/// Bibliotek – bøger forældre har købt.
+/// Bibliotek – baggrund [bogskabbaggrund.png], bøger på hylder.
 class KidLibraryScreen extends StatefulWidget {
   final String kidId;
 
@@ -19,7 +20,10 @@ class KidLibraryScreen extends StatefulWidget {
 }
 
 class _KidLibraryScreenState extends State<KidLibraryScreen> {
+  /// Købte bøger (til tom-tilstand og gruppe-logik).
   List<Map<String, dynamic>> _purchasedBooks = [];
+  /// Rækkefølge på hylderne: bog-map eller gruppe-tile `{'_kind':'group','id','name'}`.
+  List<Map<String, dynamic>> _shelfItems = [];
   bool _loading = true;
 
   @override
@@ -39,7 +43,13 @@ class _KidLibraryScreenState extends State<KidLibraryScreen> {
           .maybeSingle();
       final profileId = kidRes?['parent_id'] as String?;
       if (profileId == null) {
-        if (mounted) setState(() { _purchasedBooks = []; _loading = false; });
+        if (mounted) {
+          setState(() {
+            _purchasedBooks = [];
+            _shelfItems = [];
+            _loading = false;
+          });
+        }
         return;
       }
 
@@ -53,12 +63,24 @@ class _KidLibraryScreenState extends State<KidLibraryScreen> {
           bookIds.add(p['book_id'] as String);
         }
       } catch (_) {
-        if (mounted) setState(() { _purchasedBooks = []; _loading = false; });
+        if (mounted) {
+          setState(() {
+            _purchasedBooks = [];
+            _shelfItems = [];
+            _loading = false;
+          });
+        }
         return;
       }
 
       if (bookIds.isEmpty) {
-        if (mounted) setState(() { _purchasedBooks = []; _loading = false; });
+        if (mounted) {
+          setState(() {
+            _purchasedBooks = [];
+            _shelfItems = [];
+            _loading = false;
+          });
+        }
         return;
       }
 
@@ -66,7 +88,9 @@ class _KidLibraryScreenState extends State<KidLibraryScreen> {
           .from('shop_books')
           .select('id, title')
           .inFilter('id', bookIds);
-      final books = (booksRes as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      final books = (booksRes as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
 
       for (final b in books) {
         final pagesRes = await Supabase.instance.client
@@ -78,94 +102,662 @@ class _KidLibraryScreenState extends State<KidLibraryScreen> {
         b['cover_url'] = pagesRes?['right_image_url'];
       }
 
-      if (mounted) setState(() { _purchasedBooks = books; _loading = false; });
+      final purchaseOrder = <String, int>{
+        for (var i = 0; i < bookIds.length; i++) bookIds[i]: i,
+      };
+      books.sort((a, b) => (purchaseOrder[a['id']] ?? 0)
+          .compareTo(purchaseOrder[b['id']] ?? 0));
+
+      List<Map<String, dynamic>> shelfItems = List.from(books);
+
+      if (books.length > 6) {
+        try {
+          final groupsRes = await Supabase.instance.client
+              .from('shop_book_groups')
+              .select('id, name, sort_order')
+              .eq('profile_id', profileId)
+              .order('sort_order');
+          final groups = (groupsRes as List)
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+          final groupIds = groups.map((g) => g['id'] as String).toList();
+
+          final itemsRes = groupIds.isEmpty
+              ? <dynamic>[]
+              : await Supabase.instance.client
+                  .from('shop_book_group_items')
+                  .select('group_id, book_id, sort_order')
+                  .inFilter('group_id', groupIds)
+                  .order('sort_order');
+
+          final booksInAnyGroup = <String>{};
+          final itemsByGroup = <String, List<Map<String, dynamic>>>{};
+          for (final g in groups) {
+            itemsByGroup[g['id'] as String] = [];
+          }
+          for (final row in itemsRes) {
+            final m = Map<String, dynamic>.from(row as Map);
+            final gid = m['group_id'] as String;
+            if (!itemsByGroup.containsKey(gid)) continue;
+            final bid = m['book_id'] as String;
+            booksInAnyGroup.add(bid);
+            itemsByGroup[gid]!.add(m);
+          }
+
+          shelfItems = [];
+          for (final g in groups) {
+            final gid = g['id'] as String;
+            final itemRows = itemsByGroup[gid] ?? [];
+            if (itemRows.isEmpty) continue;
+            shelfItems.add({
+              '_kind': 'group',
+              'id': gid,
+              'name': g['name'] as String? ?? 'Gruppe',
+            });
+          }
+          for (final b in books) {
+            final id = b['id'] as String;
+            if (!booksInAnyGroup.contains(id)) {
+              shelfItems.add(b);
+            }
+          }
+        } catch (_) {
+          shelfItems = List.from(books);
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _purchasedBooks = books;
+          _shelfItems = shelfItems;
+          _loading = false;
+        });
+      }
     } catch (_) {
-      if (mounted) setState(() { _purchasedBooks = []; _loading = false; });
+      if (mounted) {
+        setState(() {
+          _purchasedBooks = [];
+          _shelfItems = [];
+          _loading = false;
+        });
+      }
     }
+  }
+
+  /// Første 3 på øverste hylde, resten på næste (vandret scroll ved >3 pr. hylde).
+  List<List<Map<String, dynamic>>> _itemsOnTwoShelves() {
+    if (_shelfItems.isEmpty) {
+      return [[], []];
+    }
+    final first = _shelfItems.length <= 3
+        ? List<Map<String, dynamic>>.from(_shelfItems)
+        : _shelfItems.sublist(0, 3);
+    final second = _shelfItems.length <= 3
+        ? <Map<String, dynamic>>[]
+        : _shelfItems.sublist(3);
+    return [first, second];
   }
 
   @override
   Widget build(BuildContext context) {
-    final shortestSide = MediaQuery.of(context).size.shortestSide;
+    final shortestSide = MediaQuery.sizeOf(context).shortestSide;
     final isTablet = shortestSide >= 600;
-    final bgAsset = isTablet ? 'assets/baggrund_roedipad.svg' : 'assets/baggrund_roediphone.svg';
+    final topPad = MediaQuery.paddingOf(context).top;
+    final screenSize = MediaQuery.sizeOf(context);
+    final showBookOverlay = !_loading && _shelfItems.isNotEmpty;
 
     return Scaffold(
+      backgroundColor: const Color(0xFF3E2723),
       body: Stack(
         fit: StackFit.expand,
+        clipBehavior: Clip.none,
         children: [
-          Positioned.fill(child: SvgPicture.asset(bgAsset, fit: BoxFit.cover)),
+          Positioned.fill(
+            child: Image.asset(
+              'assets/bogskabbaggrund.png',
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+              filterQuality: FilterQuality.medium,
+            ),
+          ),
+          // Let mørkning øverst så titel og knap læses bedre
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: topPad + 72,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.45),
+                    Colors.transparent,
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Bøger direkte på hyldelinjerne i bogskabbaggrund (fuld skærm som billedet)
+          if (showBookOverlay)
+            Positioned.fill(
+              child: _BogskabShelfOverlay(
+                maxWidth: screenSize.width,
+                maxHeight: screenSize.height,
+                kidId: widget.kidId,
+                booksPerShelf: _itemsOnTwoShelves(),
+                isTablet: isTablet,
+              ),
+            ),
           SafeArea(
+            bottom: true,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text('Bibliotek', style: TextStyle(fontSize: isTablet ? 28 : 24, fontWeight: FontWeight.w900, color: Colors.white)),
+                  padding: EdgeInsets.fromLTRB(
+                    kidZoneHorizontalPadding + 52,
+                    8,
+                    kidZoneHorizontalPadding,
+                    4,
+                  ),
+                  child: Text(
+                    'Bibliotek',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: isTablet ? 26 : 22,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      shadows: const [
+                        Shadow(
+                          color: Colors.black87,
+                          blurRadius: 8,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
                 Expanded(
-                  child: _loading
-                      ? const Center(child: CircularProgressIndicator(color: Colors.white))
-                      : _purchasedBooks.isEmpty
-                          ? Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Icon(Icons.menu_book, size: 64, color: Colors.white70),
-                                    const SizedBox(height: 16),
-                                    const Text('Ingen bøger endnu.\nForældre kan købe bøger i Bogbutik.', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: Colors.white)),
-                                  ],
-                                ),
-                              ),
-                            )
-                          : GridView.builder(
-                              padding: const EdgeInsets.all(16),
-                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: isTablet ? 5 : 4,
-                                childAspectRatio: 0.7,
-                                crossAxisSpacing: 12,
-                                mainAxisSpacing: 12,
-                              ),
-                              itemCount: _purchasedBooks.length,
-                              itemBuilder: (context, i) {
-                                final b = _purchasedBooks[i];
-                                final id = b['id'] as String;
-                                final title = b['title'] as String? ?? 'Uden titel';
-                                final coverUrl = b['cover_url'] as String?;
-                                return GestureDetector(
-                                  onTap: () => context.push('/kid/library/${widget.kidId}/book/$id'),
-                                  behavior: HitTestBehavior.opaque,
-                                  child: Card(
-                                    color: const Color(0xFFF9C433).withOpacity(0.9),
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                                      children: [
-                                        Expanded(
-                                          child: coverUrl != null && coverUrl.isNotEmpty
-                                              ? Image.network(coverUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.menu_book, size: 32)))
-                                              : const Center(child: Icon(Icons.menu_book, size: 32)),
-                                        ),
-                                        Padding(
-                                          padding: const EdgeInsets.all(6),
-                                          child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11), maxLines: 2, overflow: TextOverflow.ellipsis),
-                                        ),
-                                      ],
+                  child: IgnorePointer(
+                    ignoring: showBookOverlay,
+                    child: _loading
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                              color: Color(0xFFF9C433),
+                            ),
+                          )
+                        : _purchasedBooks.isEmpty
+                            ? Center(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(24),
+                                  child: DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withValues(
+                                        alpha: 0.35,
+                                      ),
+                                      borderRadius: BorderRadius.circular(16),
+                                    ),
+                                    child: const Padding(
+                                      padding: EdgeInsets.all(20),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(
+                                            Icons.menu_book,
+                                            size: 56,
+                                            color: Colors.white70,
+                                          ),
+                                          SizedBox(height: 12),
+                                          Text(
+                                            'Ingen bøger endnu.\nForældre kan købe bøger i Bogbutik.',
+                                            textAlign: TextAlign.center,
+                                            style: TextStyle(
+                                              fontSize: 16,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
                                     ),
                                   ),
-                                );
-                              },
-                            ),
+                                ),
+                              )
+                            : const ColoredBox(
+                                color: Colors.transparent,
+                                child: SizedBox.expand(),
+                              ),
+                  ),
                 ),
               ],
             ),
           ),
           Positioned(
             top: MediaQuery.paddingOf(context).top + 8,
-            left: 8,
+            left: kidZoneHorizontalPadding,
             child: KidSessionNavButton(kidId: widget.kidId),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// To hylder matchet til træhylderne i [bogskabbaggrund.png] (1024², centreret).
+/// Brøkdele er af **fuld skærmhøjde** så de følger `BoxFit.cover` som baggrunden.
+/// Juster [_kBgShelfBands] hvis illustrationen opdateres.
+class _BogskabShelfOverlay extends StatelessWidget {
+  const _BogskabShelfOverlay({
+    required this.maxWidth,
+    required this.maxHeight,
+    required this.kidId,
+    required this.booksPerShelf,
+    required this.isTablet,
+  });
+
+  final double maxWidth;
+  final double maxHeight;
+  final String kidId;
+  final List<List<Map<String, dynamic>>> booksPerShelf;
+  final bool isTablet;
+
+  static const double _coverAspect = 1.42;
+
+  /// `top`/`bottom` = andel fra skærmens top; bøger [Align.bottomCenter] i båndet
+  /// så deres bund ligger ved `bottom` (hyldelinjen foran skuffeafsnittet).
+  static const List<({double top, double bottom})> _kBgShelfBands = [
+    (top: 0.168, bottom: 0.388),
+    (top: 0.432, bottom: 0.652),
+  ];
+
+  /// Flyt hylder ~10 % ned ift. baggrund (samme offset på top og bund).
+  static const double _kShelfVerticalShift = 0.10;
+
+  /// Indryk så bøgerne står i åbningen mellem træstolperne.
+  static double _sideInset(double w) => (w * 0.125).clamp(14.0, 56.0);
+
+  @override
+  Widget build(BuildContext context) {
+    if (maxHeight <= 1 || maxWidth <= 1) {
+      return const SizedBox.shrink();
+    }
+
+    final inset = _sideInset(maxWidth);
+
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        for (var s = 0;
+            s < booksPerShelf.length && s < _kBgShelfBands.length;
+            s++)
+          Positioned(
+            left: inset,
+            right: inset,
+            top: maxHeight *
+                (_kBgShelfBands[s].top + _kShelfVerticalShift).clamp(0.0, 0.88),
+            height: maxHeight *
+                (_kBgShelfBands[s].bottom - _kBgShelfBands[s].top),
+            child: _CabinetShelfRow(
+              shelfBooks: booksPerShelf[s],
+              kidId: kidId,
+              isTablet: isTablet,
+              coverAspect: _coverAspect,
+              overlayOnArtwork: true,
+              overlayLayoutWidthSlots: 3,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// Én hylde – enten i overlay mod [bogskabbaggrund] eller tidligere skabs-layout.
+class _CabinetShelfRow extends StatelessWidget {
+  const _CabinetShelfRow({
+    required this.shelfBooks,
+    required this.kidId,
+    required this.isTablet,
+    required this.coverAspect,
+    this.overlayOnArtwork = false,
+    this.overlayLayoutWidthSlots,
+  });
+
+  final List<Map<String, dynamic>> shelfBooks;
+  final String kidId;
+  final bool isTablet;
+  final double coverAspect;
+  final bool overlayOnArtwork;
+  /// Når sat (fx 3): bredden af hvert element som om der er så mange pladser på hylden.
+  final int? overlayLayoutWidthSlots;
+
+  static ({double bookW, double bookH, double titleH, double gap})
+      _layoutForRow({
+    required double innerW,
+    required double rowMaxHeight,
+    required int bookCount,
+    required bool isTablet,
+    required double coverAspect,
+    bool captionBelow = true,
+    int? widthSlots,
+  }) {
+    final gap = isTablet ? 8.0 : 5.0;
+    if (bookCount <= 0 || innerW <= 0 || rowMaxHeight <= 0) {
+      return (bookW: 48.0, bookH: 48.0, titleH: 0.0, gap: gap);
+    }
+
+    final slotCount = math.max(1, widthSlots ?? bookCount);
+
+    var titleH = captionBelow
+        ? (rowMaxHeight * 0.24).clamp(10.0, 22.0)
+        : 0.0;
+    const verticalPad = 4.0;
+    var maxBodyH = rowMaxHeight - titleH - verticalPad;
+    if (maxBodyH < 6) {
+      titleH = math.max(0.0, rowMaxHeight - verticalPad - 8);
+      maxBodyH = math.max(4.0, rowMaxHeight - titleH - verticalPad);
+    }
+
+    final fromRow = (innerW - (slotCount - 1) * gap) / slotCount;
+    // Højere loft på bredde så 1,3× skalering bedre kan udnyttes på hylden
+    final capW = math.min(innerW * 0.364, rowMaxHeight * coverAspect * 0.92);
+    var bookW = math.min(fromRow, capW);
+    var bookH = math.min(bookW * coverAspect, maxBodyH);
+    bookW = bookH / coverAspect;
+
+    var needW = slotCount * bookW + (slotCount - 1) * gap;
+    if (needW > innerW + 0.5) {
+      bookW = (innerW - (slotCount - 1) * gap) / slotCount;
+      bookH = math.min(bookW * coverAspect, maxBodyH);
+      bookW = bookH / coverAspect;
+    }
+
+    const minBookW = 30.0;
+    if (bookW < minBookW) {
+      final hAtMin = minBookW * coverAspect;
+      if (hAtMin <= maxBodyH) {
+        bookW = minBookW;
+        bookH = hAtMin;
+      } else {
+        bookH = maxBodyH;
+        bookW = bookH / coverAspect;
+      }
+    }
+
+    // Tidligere 1,3×; nu yderligere ~50 % større → 1,3 × 1,5 ≈ 1,95
+    const bookScale = 1.95;
+    bookW *= bookScale;
+    bookH *= bookScale;
+    bookH = math.min(bookH, maxBodyH);
+    bookW = bookH / coverAspect;
+    var totalW = bookCount * bookW + (bookCount - 1) * gap;
+    if (totalW > innerW + 0.5) {
+      bookW = (innerW - (bookCount - 1) * gap) / bookCount;
+      bookH = math.min(bookW * coverAspect, maxBodyH);
+      bookW = bookH / coverAspect;
+    }
+
+    return (bookW: bookW, bookH: bookH, titleH: titleH, gap: gap);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        final innerW = c.maxWidth;
+        final rowH = c.maxHeight;
+        final n = shelfBooks.length;
+
+        if (n == 0) {
+          return overlayOnArtwork
+              ? const SizedBox.expand()
+              : ColoredBox(
+                  color: const Color(0xFF4E342E).withValues(alpha: 0.25),
+                  child: const Align(
+                    alignment: Alignment.bottomCenter,
+                    child: SizedBox(height: 3, width: double.infinity),
+                  ),
+                );
+        }
+
+        final layout = _layoutForRow(
+          innerW: innerW,
+          rowMaxHeight: rowH,
+          bookCount: n,
+          isTablet: isTablet,
+          coverAspect: coverAspect,
+          captionBelow: !overlayOnArtwork,
+          widthSlots: overlayOnArtwork ? overlayLayoutWidthSlots : null,
+        );
+
+        final need =
+            n * layout.bookW + (n > 0 ? (n - 1) * layout.gap : 0);
+        final overflowW = need > innerW + 0.5;
+
+        final row = Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < n; i++) ...[
+              if (i > 0) SizedBox(width: layout.gap),
+              _ShelfBookTile(
+                item: shelfBooks[i],
+                kidId: kidId,
+                width: layout.bookW,
+                height: layout.bookH,
+                titleStripHeight: layout.titleH,
+                titleFontSize: (layout.bookW * 0.2).clamp(7.0, 12.0),
+                showCaptionBelow: !overlayOnArtwork,
+              ),
+            ],
+          ],
+        );
+
+        final scroll = SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.only(
+            left: 4,
+            right: 4,
+            bottom: overlayOnArtwork ? 4 : 2,
+          ),
+          physics: overflowW
+              ? const BouncingScrollPhysics()
+              : const NeverScrollableScrollPhysics(),
+          child: row,
+        );
+
+        if (overlayOnArtwork) {
+          return Align(
+            alignment: Alignment.bottomCenter,
+            child: scroll,
+          );
+        }
+
+        return DecoratedBox(
+          decoration: const BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: Color(0xFF5D4037), width: 5),
+            ),
+          ),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: scroll,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ShelfBookTile extends StatelessWidget {
+  const _ShelfBookTile({
+    required this.item,
+    required this.kidId,
+    required this.width,
+    required this.height,
+    required this.titleStripHeight,
+    required this.titleFontSize,
+    this.showCaptionBelow = true,
+  });
+
+  final Map<String, dynamic> item;
+  final String kidId;
+  final double width;
+  final double height;
+  final double titleStripHeight;
+  final double titleFontSize;
+  final bool showCaptionBelow;
+
+  bool get _isGroup => item['_kind'] == 'group';
+
+  @override
+  Widget build(BuildContext context) {
+    final id = item['id'] as String;
+    final title = _isGroup
+        ? (item['name'] as String? ?? 'Gruppe')
+        : (item['title'] as String? ?? 'Bog');
+    final coverUrl =
+        _isGroup ? null : (item['cover_url'] as String?);
+
+    final inner = _isGroup
+        ? ColoredBox(
+            color: const Color(0xFF6D4C41),
+            child: Center(
+              child: Icon(
+                Icons.folder_special_rounded,
+                size: (width * 0.55).clamp(22.0, 48.0),
+                color: const Color(0xFFFFF8E1),
+              ),
+            ),
+          )
+        : (coverUrl != null && coverUrl.isNotEmpty
+            ? Image.network(
+                coverUrl,
+                fit: BoxFit.cover,
+                width: width,
+                height: height,
+                errorBuilder: (_, _, _) => _bookFallback(title),
+              )
+            : _bookFallback(title));
+
+    final tile = SizedBox(
+      width: width,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SizedBox(
+            height: height,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(3),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x66000000),
+                    blurRadius: 6,
+                    offset: Offset(3, 4),
+                  ),
+                  BoxShadow(
+                    color: Color(0x33000000),
+                    blurRadius: 2,
+                    offset: Offset(-1, 0),
+                  ),
+                ],
+                border: Border.all(
+                  color: const Color(0xFF4E342E),
+                  width: 2,
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: inner,
+              ),
+            ),
+          ),
+          if (showCaptionBelow && titleStripHeight > 0)
+            SizedBox(
+              height: titleStripHeight,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: width + 8),
+                  child: Text(
+                    title,
+                    maxLines: 2,
+                    textAlign: TextAlign.center,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: titleFontSize,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                      height: 1.05,
+                      shadows: const [
+                        Shadow(
+                          color: Colors.black87,
+                          blurRadius: 4,
+                          offset: Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+
+    void onTap() {
+      if (_isGroup) {
+        context.push('/kid/library/$kidId/group/$id');
+      } else {
+        context.push('/kid/library/$kidId/book/$id');
+      }
+    }
+
+    final ink = InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(4),
+      child: showCaptionBelow
+          ? tile
+          : Semantics(
+              label: title,
+              button: true,
+              child: tile,
+            ),
+    );
+
+    return Material(
+      color: Colors.transparent,
+      child: showCaptionBelow
+          ? ink
+          : Tooltip(
+              message: title,
+              preferBelow: false,
+              child: ink,
+            ),
+    );
+  }
+
+  Widget _bookFallback(String title) {
+    return ColoredBox(
+      color: const Color(0xFF5D4037),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(4),
+          child: Text(
+            title,
+            maxLines: 4,
+            textAlign: TextAlign.center,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFFFFF8E1),
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
       ),
     );
   }
