@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../utils/alfamon_display_name.dart';
+
 /// Kort til spillet – bruges af både vs computer og PvP.
 class SpilGameCard {
   final String id;
@@ -58,7 +60,7 @@ class SpilCardService {
         .maybeSingle();
     if (avRes == null) return null;
 
-    final name = avRes['name'] as String? ?? 'Alfamon';
+    final name = alfamonDisplayName(avRes['name'] as String? ?? 'Alfamon');
     final letter = avRes['letter'] as String?;
 
     final stageRes = await client
@@ -135,7 +137,9 @@ class SpilCardService {
       final avatarId = row['avatar_id'] as String;
       final stageIndex = row['current_stage_index'] as int;
       final av = row['avatars'];
-      final name = (av is Map ? av['name'] : null) as String? ?? 'Alfamon';
+      final name = alfamonDisplayName(
+        (av is Map ? av['name'] : null) as String? ?? 'Alfamon',
+      );
       final letter = (av is Map ? av['letter'] : null) as String?;
 
       final stageRes = await client
@@ -186,7 +190,9 @@ class SpilCardService {
       if (cards.any((c) => c.avatarId == avatarId)) continue;
 
       final av = row['avatars'];
-      final name = (av is Map ? av['name'] : null) as String? ?? 'Alfamon';
+      final name = alfamonDisplayName(
+        (av is Map ? av['name'] : null) as String? ?? 'Alfamon',
+      );
       final letter = (av is Map ? av['letter'] : null) as String?;
 
       final stageRes = await client

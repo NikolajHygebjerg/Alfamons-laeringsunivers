@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../services/alfamon_evolution.dart';
 import 'alfamon_evolution_progress_bar.dart';
+import '../../../utils/alfamon_display_name.dart';
 import '../../../widgets/asset_or_network_image.dart';
 
 class CurrentAvatar extends StatefulWidget {
@@ -100,7 +101,7 @@ class _CurrentAvatarState extends State<CurrentAvatar> {
         .maybeSingle();
 
     setState(() {
-      _avatarName = avatarRes['name'] as String? ?? 'Alfamon';
+      _avatarName = alfamonDisplayName(avatarRes['name'] as String? ?? 'Alfamon');
       _currentStage = currentStage;
       _pointsTotal = points;
       _imageUrl = stageData?['image_url'] as String?;

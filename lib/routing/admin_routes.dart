@@ -5,6 +5,9 @@ import '../models/kid.dart';
 import '../screens/admin/admin_audio_library_screen.dart';
 import '../screens/admin/admin_avatars_screen.dart';
 import '../screens/admin/admin_bogbutik_screen.dart';
+import '../screens/admin/admin_book_builder_alfamon_images_screen.dart';
+import '../screens/admin/admin_book_builder_assets_hub_screen.dart';
+import '../screens/admin/admin_book_builder_gallery_screen.dart';
 import '../screens/admin/admin_book_builder_screen.dart';
 import '../screens/admin/admin_book_editor_screen.dart';
 import '../screens/admin/admin_dashboard.dart';
@@ -70,6 +73,18 @@ GoRoute adminRootRoute() {
         path: 'book-builder',
         builder: (_, __) => const AdminBookBuilderScreen(),
         routes: [
+          GoRoute(
+            path: 'bogbilleder',
+            builder: (_, __) => const AdminBookBuilderAssetsHubScreen(),
+          ),
+          GoRoute(
+            path: 'alfamon-billeder',
+            builder: (_, __) => const AdminBookBuilderAlfamonImagesScreen(),
+          ),
+          GoRoute(
+            path: 'billedbibliotek',
+            builder: (_, __) => const AdminBookBuilderGalleryScreen(),
+          ),
           GoRoute(
             path: 'lydbibliotek',
             builder: (_, __) => const AdminAudioLibraryScreen(),

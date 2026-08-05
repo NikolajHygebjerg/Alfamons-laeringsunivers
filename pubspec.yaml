@@ -17,7 +17,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
 # Android/iOS: name = version før +, build/code = tal efter + (skal stige pr. Play/App Store-upload).
-version: 1.0.6+6
+version: 1.0.10+13
 
 environment:
   sdk: ^3.11.1
@@ -47,12 +47,18 @@ dependencies:
   provider: ^6.1.2
   shared_preferences: ^2.2.2
   flutter_local_notifications: ^18.0.1
-  file_picker: ^8.1.6
+  # 10.x hæver typisk compileSdk og matcher flutter_plugin_android_lifecycle (SDK 36+).
+  file_picker: ^10.0.0
   table_calendar: ^3.1.2
   flutter_tts: ^4.2.1
   url_launcher: ^6.3.2
   app_settings: ^7.0.0
   android_intent_plus: ^6.0.0
+  speech_to_text: ^7.0.0
+  in_app_review: ^2.0.10
+  pdf: ^3.11.1
+  printing: ^5.13.2
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:
@@ -87,10 +93,17 @@ flutter:
   uses-material-design: true
 
   # To add assets to your application, add an assets section, like this:
-  # Undermapper tælles ikke med i `assets/` — list dem eksplicit.
+  # Efter ændring: `flutter clean && flutter pub get` og `cd ios && pod install` før Archive.
+  # Path-pakken [alfamon_trace] loader `packages/alfamon_trace/Assets/...` — listes her så
+  # iOS/TestFlight altid får dem i AssetManifest (ud over pakkens egen pubspec).
   assets:
     - assets/
     - assets/matematiktutor/
+    - assets/alfamons_bundles/
+    - assets/alfamons_bundles/trace/
+    - assets/alfamons_bundles/books/
+    - packages/alfamon_trace/Assets/
+    - packages/alfamon_trace/Assets/bogstaver/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

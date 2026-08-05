@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Anmod om sletning af konto og data — Alfamons læringsunivers.">
+  <title>Slet konto og data — Alfamons læringsunivers</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f8f9fb;
+      --fg: #1a1a1a;
+      --muted: #5c6370;
+      --border: #e2e5eb;
+      --accent: #5a1a0d;
+      --accent-fg: #fff;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #12141a;
+        --fg: #eef0f4;
+        --muted: #9aa3b2;
+        --border: #2a2f3a;
+        --accent: #c17a5c;
+        --accent-fg: #1a0f0a;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      line-height: 1.55;
+      max-width: 42rem;
+      margin: 0 auto;
+      padding: 1.5rem 1.25rem 3rem;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    h1 { font-size: 1.65rem; margin-top: 0; line-height: 1.25; }
+    h2 { font-size: 1.15rem; margin-top: 2rem; border-bottom: 1px solid var(--border); padding-bottom: 0.35rem; }
+    p, ul { margin: 0.65rem 0; }
+    ul { padding-left: 1.25rem; }
+    .meta { color: var(--muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+    .placeholder {
+      background: rgba(128, 128, 200, 0.15);
+      padding: 0.1rem 0.35rem;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    a { color: inherit; }
+    .cta-wrap {
+      margin: 1.75rem 0;
+      padding: 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(90, 26, 13, 0.06);
+    }
+    @media (prefers-color-scheme: dark) {
+      .cta-wrap { background: rgba(193, 122, 92, 0.12); }
+    }
+    .cta {
+      display: inline-block;
+      margin-top: 0.5rem;
+      padding: 0.75rem 1.25rem;
+      background: var(--accent);
+      color: var(--accent-fg) !important;
+      text-decoration: none;
+      font-weight: 600;
+      border-radius: 10px;
+    }
+    .cta:hover, .cta:focus { filter: brightness(1.08); }
+    .cta:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .foot { margin-top: 2rem; color: var(--muted); font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>Slet konto og tilknyttede data</h1>
+  <p class="meta">
+    <strong>Alfamons læringsunivers</strong> — her kan du anmode om sletning af din forældrekonto og de data, der er knyttet til den (herunder børneprofiler og aktivitet i tjenesten).
+  </p>
+
+  <h2>1. Anmod om sletning pr. e-mail</h2>
+  <p>Send os en e-mail fra den adresse, du brugte til at oprette kontoen. Så kan vi bekræfte, at anmodningen kommer fra dig.</p>
+
+  <div class="cta-wrap">
+    <p style="margin-top:0;"><strong>Klik for at åbne din e-mailapp med forudfyldt tekst:</strong></p>
+    <!-- Ved publicering: erstat mailadressen i href med samme som i privatlivspolitikken (fx privacy@…). -->
+    <a class="cta" id="delete-request-link" href="#">Anmod om sletning af min konto og data</a>
+    <p style="margin-bottom:0;font-size:0.9rem;color:var(--muted);">Virker knappen ikke, kan du manuelt skrive til <span class="placeholder" id="delete-email-display">[privacy@eksempel.dk]</span> med emnet «Sletning af konto».</p>
+  </div>
+
+  <p>Medtag gerne i e-mailen:</p>
+  <ul>
+    <li>den e-mail, du er logget ind med;</li>
+    <li>at du ønsker sletning af konto og tilknyttede data;</li>
+    <li>eventuelt navn på børneprofiler, hvis du vil have uspecificeret slettet alt under kontoen.</li>
+  </ul>
+  <p>Vi behandler din anmodning så hurtigt som muligt og senest inden for den frist, databeskyttelseslovgivningen stiller. I sjældne tilfælde kan vi være forpligtet til at opbevare visse oplysninger af lovmæssige årsager — i så fald får du besked.</p>
+
+  <h2>2. Slet direkte i appen (hvis du stadig har adgang)</h2>
+  <p>Hvis du kan logge ind som forælder i forælder-delen af appen, kan du under <strong>Indstillinger</strong> vælge <strong>Slet min konto</strong> for at fjerne kontoen og tilknyttede data, når du har netforbindelse.</p>
+
+  <h2>3. App-butikker</h2>
+  <p>Afinstallation af appen sletter ikke din konto hos os. Brug e-mailanmodningen ovenfor eller funktionen i appen. Abonnementer eller køb, der håndteres af Apple eller Google, reguleres af deres vilkår i app-butikken.</p>
+
+  <p class="foot">
+    <a href="privacy.html">Privatlivspolitik</a>
+    · Kontakt / dataansvarlig: se <a href="privacy.html">privatlivspolitikken</a> § 1.
+  </p>
+
+  <script>
+    (function () {
+      // Sæt den samme modtager som I bruger i privacy.html — opdater begge steder ved publicering.
+      var email = 'privacy@eksempel.dk';
+      var subject = encodeURIComponent('Sletning af konto — Alfamons læringsunivers');
+      var body = encodeURIComponent(
+        'Jeg anmoder om sletning af min konto og tilknyttede data i Alfamons læringsunivers.\r\n\r\n' +
+        'E-mail til min konto: \r\n\r\n' +
+        '(Valgfrit) Kommentar: \r\n'
+      );
+      var a = document.getElementById('delete-request-link');
+      a.href = 'mailto:' + email + '?subject=' + subject + '&body=' + body;
+      var disp = document.getElementById('delete-email-display');
+      if (disp) disp.textContent = email;
+    })();
+  </script>
+</body>
+</html>

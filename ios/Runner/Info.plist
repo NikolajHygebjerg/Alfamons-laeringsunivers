@@ -62,6 +62,8 @@
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Appen bruger mikrofon til at optage ord til lydbiblioteket, så børn kan få ord læst op i bøgerne.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Appen omsætter talte ord til bogstavtekst, når barnet laver egen historie (tale-til-tekst i bogbyggeren).</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Appen bruger adgang til fotobiblioteket, så du kan vælge billeder til bøgerne.</string>
 	<key>UISupportedInterfaceOrientations~ipad</key>

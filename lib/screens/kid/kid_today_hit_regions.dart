@@ -42,4 +42,7 @@ abstract final class KidTodayHitRegions {
 
   /// Højre side → spil / kort
   static final Rect spil = Rect.fromLTWH(760, 60, 420, 780);
+
+  /// Bogbygger — nederst til venstre (åben bog); asset `bogbygger.png`.
+  static final Rect storybook = Rect.fromLTWH(40, 598, 228, 248);
 }

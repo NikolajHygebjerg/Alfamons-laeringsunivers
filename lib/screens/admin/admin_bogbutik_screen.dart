@@ -388,7 +388,7 @@ class _AdminBogbutikScreenState extends State<AdminBogbutikScreen> {
           onPressed: () => context.go('/admin'),
         ),
         actions: [
-          const AdminMenuToolbarButton(),
+          const AdminAppBarMenuAndLogout(),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loading ? null : _load,

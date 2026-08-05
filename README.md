@@ -49,3 +49,4 @@ lib/
 - Android
 - Web
 - macOS
+- Windows (desktop — se [docs/flutter-windows-build.md](docs/flutter-windows-build.md); bygges kun på Windows-PC)

@@ -1,5 +1,9 @@
 # iOS 13+ required by audioplayers_darwin (Swift Concurrency / Task)
 platform :ios, '13.0'
+# Dæmp gule advarsler i tredjeparts-Pods (file_picker, printing, DK*, SwiftyGif, …).
+# Ret ALDRIG koden i Xcode i Pods/ — den overskrives. Opgrader plugins eller denne indstilling.
+# (Runner-målet: jeres egen kode får stadig almindelige advarsler herfra.)
+inhibit_all_warnings!
 # pubspec har git-override for audioplayers_darwin (pub.dev 6.4.0 har Swift-fejl). Hvis Xcode
 # stadig bygger fra ~/.pub-cache/hosted/.../audioplayers_darwin-6.4.0: kør fra projektrod
 # `flutter build ios --config-only` (eller slet ios/.symlinks og kør flutter pub get + pod install),
@@ -49,6 +53,8 @@ post_install do |installer|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '13.0'
       # Xcode 15+: avoid "double-quoted include in framework header" in third-party pods (e.g. SDWebImage).
       config.build_settings['CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER'] = 'NO'
+      # Samme som macOS: færre Sendable/main-actor-advarsler i audioplayers_darwin m.fl.
+      config.build_settings['SWIFT_STRICT_CONCURRENCY'] = 'minimal'
     end
   end
 end

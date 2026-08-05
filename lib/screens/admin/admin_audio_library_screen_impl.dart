@@ -455,7 +455,7 @@ class _AdminAudioLibraryScreenState extends State<AdminAudioLibraryScreen> {
             icon: const Icon(Icons.arrow_back),
             onPressed: () => context.go('/admin/book-builder'),
           ),
-          actions: const [AdminMenuToolbarButton()],
+          actions: const [AdminAppBarMenuAndLogout()],
         ),
         body: const Center(
           child: Padding(
@@ -476,7 +476,7 @@ class _AdminAudioLibraryScreenState extends State<AdminAudioLibraryScreen> {
           onPressed: () => context.go('/admin/book-builder'),
         ),
         actions: [
-          const AdminMenuToolbarButton(),
+          const AdminAppBarMenuAndLogout(),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loading ? null : _load,

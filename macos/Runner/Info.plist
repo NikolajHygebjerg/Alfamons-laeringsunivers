@@ -26,6 +26,8 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Appen bruger mikrofon til at optage ord til lydbiblioteket.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Appen omsætter talte ord til bogstavtekst, når barnet laver egen historie (tale-til-tekst i bogbyggeren).</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>

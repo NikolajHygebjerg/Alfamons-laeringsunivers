@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/kid.dart';
 import '../../models/task.dart';
+import '../../utils/alfamon_display_name.dart';
 import '../../utils/recurring_task_schedule.dart';
 import '../../utils/danish_alfamon_sort.dart';
 import '../../services/alfamon_evolution.dart';
@@ -105,8 +106,8 @@ class _AdminKidEditScreenState extends State<AdminKidEditScreen> {
 
     final avatars = <Map<String, dynamic>>[];
     for (final a in avatarsRes as List) {
-      final name = (a['name'] as String?) ?? 'Alfamon';
-      if (isExcludedFromAdminAvatarPicker(name)) continue;
+      if (isExcludedFromAdminAvatarPicker(a['name'] as String?)) continue;
+      final name = alfamonDisplayName((a['name'] as String?) ?? 'Alfamon');
       final avatarId = a['id'] as String;
       avatars.add({
         'id': avatarId,
@@ -410,7 +411,7 @@ class _AdminKidEditScreenState extends State<AdminKidEditScreen> {
         backgroundColor: const Color(0xFF5A1A0D),
         foregroundColor: Colors.white,
         actions: [
-          const AdminMenuToolbarButton(),
+          const AdminAppBarMenuAndLogout(),
           IconButton(
             icon: const Icon(Icons.save),
             onPressed: _saveNameAndPin,

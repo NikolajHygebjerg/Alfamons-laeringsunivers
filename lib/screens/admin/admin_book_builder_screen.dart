@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../providers/profile_role_provider.dart';
+import '../../services/book_builder_gallery_service.dart';
 import '../../widgets/admin/admin_menu_toolbar_button.dart';
 
 /// Bogbuilder – kun for administratorer ([ProfileRoleProvider.isAdmin]).
@@ -55,6 +56,9 @@ class _AdminBookBuilderScreenState extends State<AdminBookBuilderScreen> {
   @override
   Widget build(BuildContext context) {
     final isAppAdmin = context.watch<ProfileRoleProvider>().isAdmin;
+    final galleryAdmin =
+        Supabase.instance.client.auth.currentUser?.email?.trim() ==
+            BookBuilderGalleryService.kAdminEmail;
     if (!isAppAdmin) {
       return Scaffold(
         appBar: AppBar(
@@ -65,7 +69,7 @@ class _AdminBookBuilderScreenState extends State<AdminBookBuilderScreen> {
             icon: const Icon(Icons.arrow_back),
             onPressed: () => context.go('/admin'),
           ),
-          actions: const [AdminMenuToolbarButton()],
+          actions: const [AdminAppBarMenuAndLogout()],
         ),
         body: const Center(
           child: Padding(
@@ -90,7 +94,22 @@ class _AdminBookBuilderScreenState extends State<AdminBookBuilderScreen> {
           onPressed: () => context.go('/admin'),
         ),
         actions: [
-          const AdminMenuToolbarButton(),
+          const AdminAppBarMenuAndLogout(),
+          if (galleryAdmin)
+            IconButton(
+              icon: const Icon(Icons.photo_library_outlined),
+              tooltip: 'Bogbygger – billedbank (assets + upload)',
+              onPressed: _loading
+                  ? null
+                  : () => context.push('/admin/book-builder/bogbilleder'),
+            ),
+          IconButton(
+            icon: const Icon(Icons.collections),
+            tooltip: 'Alfamon-billeder til bogbygger',
+            onPressed: _loading
+                ? null
+                : () => context.push('/admin/book-builder/alfamon-billeder'),
+          ),
           IconButton(
             icon: const Icon(Icons.library_music),
             tooltip: 'Lydbibliotek',

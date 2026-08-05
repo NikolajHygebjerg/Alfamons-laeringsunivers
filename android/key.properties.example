@@ -1,7 +1,16 @@
 # Kopiér til android/key.properties og udfyld værdierne.
 # key.properties er ignoreret af git – upload ikke keystore eller passwords.
 #
-# Opret upload-keystore (én gang): se
+# VIGTIGT: Uden android/key.properties underskriver "release" med DEBUG-nøglen,
+# og Play afviser med "wrong key". Brug samme upload-keystore som første gang.
+#
+# Verificér SHA1 før upload (skal matche Play Console → App integrity →
+# App signing → «Upload key certificate»):
+#   cd android
+#   keytool -list -v -keystore app/DIN_FIL.jks -alias DIT_ALIAS
+# (sammenlign linjen "SHA1:")
+#
+# Opret upload-keystore (kun første gang): se
 # https://docs.flutter.dev/deployment/android#sign-the-app
 #
 # Eksempel hvis .jks ligger i mappen android/app/:

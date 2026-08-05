@@ -1,9 +1,18 @@
+import 'dart:async' show unawaited;
+
 import 'package:just_audio/just_audio.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../models/kid_storybook_page_decoration.dart';
+import '../../models/kid_storybook_page_format.dart';
+import '../../models/kid_storybook_page_item.dart';
+import '../../models/kid_storybook_page_layout.dart';
 import '../../services/audio_cache_service.dart';
+import '../../services/kid_word_recording_service.dart';
+import '../../widgets/kid_word_record_menu.dart';
+import '../../widgets/kid_storybook_decoration.dart';
+import '../../services/kid_storybook_service.dart';
 import '../../services/task_completion_service.dart';
 import '../../widgets/kid_parent_admin_corner.dart';
 import 'widgets/gold_coins_earned_overlay.dart';
@@ -29,7 +38,13 @@ class _KidBookReaderScreenState extends State<KidBookReaderScreen> {
   bool _bookOpened = false;
   int _currentSpreadIndex = 0;
   _TextCase _textCase = _TextCase.sentence;
-  Map<String, String> _audioLibrary = {}; // word -> local path
+  /// Barnets egen [kid_story_books]-bog. Guldmønter som i shop-bøger kun når udgivet.
+  bool _isKidStoryBook = false;
+  bool _kidStoryPublishedToLibrary = false;
+  KidStorybookPageFormat _kidStoryPageFormat =
+      KidStorybookPageFormat.landscape;
+  Map<String, String> _audioLibrary = {}; // word -> lokal sti; barn overskriver voksen-ord
+  final Set<String> _kidOwnWords = {};
   final AudioPlayer _audioPlayer = AudioPlayer();
   int? _flashGoldAmount;
 
@@ -58,16 +73,118 @@ class _KidBookReaderScreenState extends State<KidBookReaderScreen> {
     await _audioPlayer.play();
   }
 
+  /// Admin + barnets optagelser (barn vinder ved samme nøgle).
+  Future<void> _applyMergedWordAudio() async {
+    final admin = await AudioCacheService.getWordToLocalPath();
+    final kid = await KidWordRecordingService.getKidWordToLocalPath(
+      widget.kidId,
+    );
+    if (!mounted) return;
+    setState(() {
+      _audioLibrary = Map<String, String>.from(admin);
+      for (final e in kid.entries) {
+        _audioLibrary[e.key] = e.value;
+      }
+      _kidOwnWords
+        ..clear()
+        ..addAll(kid.keys);
+    });
+  }
+
+  void _onWordLongPress(String normalized, String display) {
+    if (!context.mounted) return;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (ctx) => KidWordRecordMenu(
+        kidId: widget.kidId,
+        normalizedWord: normalized,
+        displayWord: display,
+        hasExistingOwnRecording: _kidOwnWords.contains(normalized),
+        onSaved: () {
+          unawaited(_applyMergedWordAudio());
+        },
+      ),
+    );
+  }
+
   Future<void> _load() async {
-    setState(() { _loading = true; _error = null; });
+    setState(() {
+      _loading = true;
+      _error = null;
+      _isKidStoryBook = false;
+      _kidStoryPublishedToLibrary = false;
+    });
     try {
+      final kidBook = await KidStorybookService.kidStoryBookRowForReader(
+        bookId: widget.bookId,
+        kidId: widget.kidId,
+      );
+
+      if (kidBook != null) {
+        _isKidStoryBook = true;
+        _kidStoryPublishedToLibrary =
+            kidBook['published_to_library'] == true;
+        _kidStoryPageFormat = KidStorybookPageFormatX.fromDb(
+          kidBook['page_format'] as String?,
+        );
+        _title = (kidBook['title'] as String?) ?? 'Bog';
+        dynamic pagesRes;
+        try {
+          pagesRes = await Supabase.instance.client
+              .from('kid_story_book_pages')
+              .select(
+                'id, spread_index, left_text, right_image_url, text_font_size, text_font_key, page_layout',
+              )
+              .eq('book_id', widget.bookId)
+              .order('spread_index');
+        } catch (_) {
+          try {
+            pagesRes = await Supabase.instance.client
+                .from('kid_story_book_pages')
+                .select(
+                  'id, spread_index, left_text, right_image_url, text_font_size, text_font_key',
+                )
+                .eq('book_id', widget.bookId)
+                .order('spread_index');
+          } catch (_) {
+            pagesRes = await Supabase.instance.client
+                .from('kid_story_book_pages')
+                .select('id, spread_index, left_text, right_image_url')
+                .eq('book_id', widget.bookId)
+                .order('spread_index');
+          }
+        }
+        final list = (pagesRes as List)
+            .map((e) => Map<String, dynamic>.from(e as Map))
+            .toList();
+        _pages = list;
+        _pages.sort(
+          (a, b) => ((a['spread_index'] ?? 0) as num)
+              .toInt()
+              .compareTo(((b['spread_index'] ?? 0) as num).toInt()),
+        );
+        if (mounted) {
+          setState(() => _loading = false);
+        }
+        await _applyMergedWordAudio();
+        return;
+      }
+
       final bookRes = await Supabase.instance.client
           .from('shop_books')
           .select('id, title')
           .eq('id', widget.bookId)
           .maybeSingle();
-      if (bookRes == null || bookRes is! Map) {
-        if (mounted) setState(() { _error = 'Bog ikke fundet'; _loading = false; });
+      if (bookRes == null) {
+        if (mounted) {
+          setState(() {
+            _error = 'Bog ikke fundet';
+            _loading = false;
+          });
+        }
         return;
       }
       _title = (bookRes['title'] as String?) ?? 'Bog';
@@ -77,15 +194,19 @@ class _KidBookReaderScreenState extends State<KidBookReaderScreen> {
           .select('id, spread_index, left_text, right_image_url')
           .eq('book_id', widget.bookId)
           .order('spread_index');
-      final list = pagesRes is List ? pagesRes : <dynamic>[];
-      _pages = list
-          .map((e) => e is Map ? Map<String, dynamic>.from(e as Map) : <String, dynamic>{})
-          .where((e) => e.isNotEmpty)
+      _pages = (pagesRes as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
-      _pages.sort((a, b) => ((a['spread_index'] ?? 0) as num).toInt().compareTo(((b['spread_index'] ?? 0) as num).toInt()));
+      _pages.sort(
+        (a, b) => ((a['spread_index'] ?? 0) as num)
+            .toInt()
+            .compareTo(((b['spread_index'] ?? 0) as num).toInt()),
+      );
 
-      final lib = await AudioCacheService.getWordToLocalPath();
-      if (mounted) setState(() { _loading = false; _audioLibrary = lib; });
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+      await _applyMergedWordAudio();
     } catch (e) {
       if (mounted) setState(() { _error = '$e'; _loading = false; });
     }
@@ -110,6 +231,10 @@ class _KidBookReaderScreenState extends State<KidBookReaderScreen> {
   }
 
   Future<void> _showFinishBookDialog() async {
+    if (_isKidStoryBook && !_kidStoryPublishedToLibrary) {
+      if (mounted) context.go('/kid/library/${widget.kidId}');
+      return;
+    }
     final pointsToAward = _pages.length - 1;
     if (pointsToAward < 1) {
       if (mounted) context.go('/kid/library/${widget.kidId}');
@@ -121,6 +246,7 @@ class _KidBookReaderScreenState extends State<KidBookReaderScreen> {
         .select('value')
         .eq('key', 'approval_code')
         .maybeSingle();
+    if (!mounted) return;
     final storedCode = (storedRes?['value'] as String?)?.trim() ?? '';
     if (storedCode.isEmpty) {
       if (mounted) {
@@ -246,32 +372,47 @@ class _KidBookReaderScreenState extends State<KidBookReaderScreen> {
               textCase: _textCase,
               audioLibrary: _audioLibrary,
               onPlayWord: _playWord,
+              onLongPressWord: _onWordLongPress,
               onPrev: _prevPage,
               onNext: _nextPage,
-              onClose: () => context.go('/kid/library/${widget.kidId}'),
               onCycleTextCase: _cycleTextCase,
+              kidStoryPageFormat:
+                  _isKidStoryBook ? _kidStoryPageFormat : null,
             ),
           Positioned(
-            top: 16,
-            left: 16,
-            child: GestureDetector(
-              onTap: () => context.go('/kid/library/${widget.kidId}'),
-              child: Container(
-                width: 80,
-                height: 80,
-                decoration: const BoxDecoration(
+            top: 0,
+            left: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Material(
                   color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 2))],
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  elevation: 4,
+                  shadowColor: Colors.black45,
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back, size: 32, color: Colors.black87),
+                    tooltip: 'Til bibliotek',
+                    padding: const EdgeInsets.all(12),
+                    onPressed: () {
+                      if (!context.mounted) return;
+                      context.go('/kid/library/${widget.kidId}');
+                    },
+                  ),
                 ),
-                child: const Icon(Icons.close, size: 44, color: Colors.black87),
               ),
             ),
           ),
           const Positioned(
-            top: 24,
-            right: 16,
-            child: KidParentAdminCornerButton(),
+            top: 0,
+            right: 0,
+            child: SafeArea(
+              child: Padding(
+                padding: EdgeInsets.all(8),
+                child: KidParentAdminCornerButton(),
+              ),
+            ),
           ),
           if (_flashGoldAmount != null)
             Positioned.fill(
@@ -339,6 +480,95 @@ class _BuildCoverView extends StatelessWidget {
   }
 }
 
+/// Tappable tekst: tryk afspiller (hvis lyd), langt tryk = barnets egen optagelse.
+///
+/// Bruger [Wrap] med [Text] per segment — ikke [Text.rich] + [WidgetSpan], som
+/// på nogle iOS-builds giver `dependents.isEmpty` under unmount.
+class _ReaderInlineWords extends StatelessWidget {
+  const _ReaderInlineWords({
+    required this.text,
+    required this.baseStyle,
+    required this.audioLibrary,
+    required this.onPlayWord,
+    required this.onLongPressWord,
+  });
+
+  final String text;
+  final TextStyle baseStyle;
+  final Map<String, String> audioLibrary;
+  final void Function(String localPath) onPlayWord;
+  final void Function(String normalized, String display) onLongPressWord;
+
+  @override
+  Widget build(BuildContext context) {
+    if (text.isEmpty) {
+      return Text('', textAlign: TextAlign.center, style: baseStyle);
+    }
+    return LayoutBuilder(
+      builder: (context, c) {
+        final maxW = c.maxWidth;
+        if (maxW <= 0) {
+          return const SizedBox.shrink();
+        }
+        final wordRe = RegExp(r'\b\w+\b');
+        final children = <Widget>[];
+        var lastEnd = 0;
+        for (final match in wordRe.allMatches(text)) {
+          if (match.start > lastEnd) {
+            children.add(
+              Text(
+                text.substring(lastEnd, match.start),
+                style: baseStyle,
+              ),
+            );
+          }
+          final w = match.group(0)!;
+          final k = w.toLowerCase();
+          final path = audioLibrary[k];
+          final has = path != null;
+          final style = has
+              ? baseStyle.copyWith(
+                  color: const Color(0xFF5A1A0D),
+                  decoration: TextDecoration.underline,
+                  decorationColor: const Color(0xFF5A1A0D),
+                )
+              : baseStyle;
+          children.add(
+            GestureDetector(
+              onTap: has ? () => onPlayWord(path) : null,
+              onLongPress: () => onLongPressWord(k, w),
+              behavior: HitTestBehavior.translucent,
+              child: Text(w, style: style),
+            ),
+          );
+          lastEnd = match.end;
+        }
+        if (lastEnd < text.length) {
+          children.add(
+            Text(
+              text.substring(lastEnd),
+              style: baseStyle,
+            ),
+          );
+        }
+        return Align(
+          alignment: Alignment.topCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxW),
+            child: Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.end,
+              spacing: 0,
+              runSpacing: 0,
+              children: children,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// Fuld skærm: venstre halvdel = tekst (hvid baggrund), højre halvdel = billede. Forside centreret.
 class _BuildBookContent extends StatelessWidget {
   final List<Map<String, dynamic>> pages;
@@ -346,10 +576,12 @@ class _BuildBookContent extends StatelessWidget {
   final _TextCase textCase;
   final Map<String, String> audioLibrary;
   final void Function(String audioUrl) onPlayWord;
+  final void Function(String normalized, String display) onLongPressWord;
   final VoidCallback onPrev;
   final VoidCallback onNext;
-  final VoidCallback onClose;
   final VoidCallback onCycleTextCase;
+  /// Kun for [kid_story_books] — styrer layout; `null` = ældre shop-bog (vandret split).
+  final KidStorybookPageFormat? kidStoryPageFormat;
 
   const _BuildBookContent({
     required this.pages,
@@ -357,10 +589,11 @@ class _BuildBookContent extends StatelessWidget {
     required this.textCase,
     required this.audioLibrary,
     required this.onPlayWord,
+    required this.onLongPressWord,
     required this.onPrev,
     required this.onNext,
-    required this.onClose,
     required this.onCycleTextCase,
+    this.kidStoryPageFormat,
   });
 
   String _applyTextCase(String text) {
@@ -399,42 +632,285 @@ class _BuildBookContent extends StatelessWidget {
     };
   }
 
-  Widget _buildTappableText(String text, TextStyle baseStyle) {
-    if (audioLibrary.isEmpty) {
-      return Text(text, textAlign: TextAlign.center, style: baseStyle);
-    }
-    final wordRegex = RegExp(r'\b\w+\b');
-    final spans = <TextSpan>[];
-    var lastEnd = 0;
-    for (final match in wordRegex.allMatches(text)) {
-      if (match.start > lastEnd) {
-        spans.add(TextSpan(text: text.substring(lastEnd, match.start), style: baseStyle));
-      }
-      final word = match.group(0)!;
-      final path = audioLibrary[word.toLowerCase()];
-      if (path != null) {
-        spans.add(TextSpan(
-          text: word,
-          style: baseStyle.copyWith(
-            color: const Color(0xFF5A1A0D),
-            decoration: TextDecoration.underline,
-            decorationColor: const Color(0xFF5A1A0D),
-          ),
-          recognizer: TapGestureRecognizer()
-            ..onTap = () => onPlayWord(path),
-        ));
-      } else {
-        spans.add(TextSpan(text: word, style: baseStyle));
-      }
-      lastEnd = match.end;
-    }
-    if (lastEnd < text.length) {
-      spans.add(TextSpan(text: text.substring(lastEnd), style: baseStyle));
-    }
-    return RichText(
-      textAlign: TextAlign.center,
-      text: TextSpan(children: spans, style: baseStyle),
+  static const _bodyTextStyle =
+      TextStyle(fontSize: 36, height: 1.6, color: Colors.black);
+
+  /// Frit lægge flere tekstblokke, billeder og figurer som i bogbyggeren, når [page_layout] findes.
+  Widget _kidStoryFreeformLayout({
+    required Map<String, dynamic> spread,
+  }) {
+    final leftText = spread['left_text'] as String? ?? '';
+    final rightImageUrl = spread['right_image_url'] as String?;
+    final textBodyFontSize =
+        (spread['text_font_size'] as num?)?.toDouble();
+    final textFontKey = spread['text_font_key'] as String?;
+    final items = KidStorybookPageItem.fromStoredPage(
+      pageLayoutRaw: spread['page_layout'],
+      leftText: leftText,
+      rightImageUrl: rightImageUrl,
+      textFontSize: textBodyFontSize,
+      textFontKey: textFontKey,
     );
+    if (items.isEmpty) {
+      return const ColoredBox(color: Colors.white, child: SizedBox.expand());
+    }
+    return _kidStoryPageItemsStack(items: items);
+  }
+
+  static const _freeformTextMaxBand = 0.36;
+
+  Widget _kidStoryPageItemsStack({required List<KidStorybookPageItem> items}) {
+    return ColoredBox(
+      color: Colors.white,
+      child: LayoutBuilder(
+        builder: (context, c) {
+          final w = c.maxWidth;
+          final h = c.maxHeight;
+          if (w <= 0 || h <= 0) {
+            return const SizedBox.shrink();
+          }
+          final baseW = w * 0.58;
+          final baseH = baseW * 0.75;
+          final decSize = w * 0.22;
+          return Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              for (final item in items)
+                _kidStoryReaderItemLayer(
+                  w: w,
+                  h: h,
+                  baseW: baseW,
+                  baseH: baseH,
+                  decSize: decSize,
+                  item: item,
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _kidStoryReaderItemLayer({
+    required double w,
+    required double h,
+    required double baseW,
+    required double baseH,
+    required double decSize,
+    required KidStorybookPageItem item,
+  }) {
+    if (item.isImage) {
+      final u = (item.imageUrl ?? '').trim();
+      if (u.isEmpty) return const SizedBox.shrink();
+      final lay = KidStorybookPageLayout(
+        imageCx: item.cx,
+        imageCy: item.cy,
+        imageScale: item.scale,
+      );
+      return Positioned.fill(
+        child: Align(
+          alignment: lay.imageAlignment,
+          child: Transform.scale(
+            scale: item.scale,
+            alignment: Alignment.center,
+            child: SizedBox(
+              width: baseW,
+              height: baseH,
+              child: Image.network(
+                u,
+                fit: item.imageFullBleed ? BoxFit.cover : BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => _placeholder(),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    if (item.isFigure) {
+      final dec = item.decoration;
+      if (dec == null) return const SizedBox.shrink();
+      return Positioned.fill(
+        child: Align(
+          alignment: dec.layoutAlignment,
+          child: Transform.scale(
+            scale: dec.scale,
+            alignment: Alignment.center,
+            child: SizedBox(
+              width: decSize,
+              height: decSize,
+              child: Center(
+                child: kidStorybookDecorationContent(
+                  dec,
+                  baseSize: decSize * 0.9,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    if (item.isText) {
+      final t0 = (item.text ?? '').trim();
+      if (t0.isEmpty) return const SizedBox.shrink();
+      final textStyle = TextStyle(
+        fontSize: (item.textFontSize ?? 36).clamp(8, 300).toDouble(),
+        height: 1.6,
+        color: Colors.black,
+        fontFamily: switch ((item.textFontKey ?? 'sans').toLowerCase().trim()) {
+          'serif' => 'serif',
+          'mono' => 'monospace',
+          'system' => null,
+          _ => null,
+        },
+      );
+      return Positioned.fill(
+        child: Align(
+          alignment: Alignment(2 * item.cx - 1, 2 * item.cy - 1),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: w * 0.9,
+              maxHeight: h * _freeformTextMaxBand,
+            ),
+            child: Transform.scale(
+              scale: item.scale,
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: w * 0.86,
+                  maxHeight: h * _freeformTextMaxBand * 0.92,
+                ),
+                child: SingleChildScrollView(
+                  child: _ReaderInlineWords(
+                    text: _applyTextCase(t0),
+                    baseStyle: textStyle,
+                    audioLibrary: audioLibrary,
+                    onPlayWord: onPlayWord,
+                    onLongPressWord: onLongPressWord,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
+  /// Skærmbøger: standard row; [kid_story_books] følger [KidStorybookPageFormat].
+  Widget _kidStoryBodyForFormat({
+    required String leftText,
+    required String? rightImageUrl,
+    required KidStorybookPageFormat? format,
+    double? textBodyFontSize,
+    String? textFontKey,
+  }) {
+    final textStyle = format != null
+        ? TextStyle(
+            fontSize: (textBodyFontSize ?? 36).clamp(8, 300).toDouble(),
+            height: 1.6,
+            color: Colors.black,
+            fontFamily: switch ((textFontKey ?? 'sans').toLowerCase().trim()) {
+              'serif' => 'serif',
+              'mono' => 'monospace',
+              'system' => null,
+              _ => null,
+            },
+          )
+        : _bodyTextStyle;
+    final textWidget = Container(
+      color: Colors.white,
+      padding: const EdgeInsets.all(32),
+      child: Center(
+        child: SingleChildScrollView(
+          child: _ReaderInlineWords(
+            text: _applyTextCase(leftText),
+            baseStyle: textStyle,
+            audioLibrary: audioLibrary,
+            onPlayWord: onPlayWord,
+            onLongPressWord: onLongPressWord,
+          ),
+        ),
+      ),
+    );
+
+    Widget imageBox(String? url) {
+      return url != null && url.isNotEmpty
+          ? Image.network(
+              url,
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+              errorBuilder: (_, __, ___) => _placeholder(),
+            )
+          : _placeholder();
+    }
+
+    if (format == null) {
+      return Row(
+        children: [
+          Expanded(child: textWidget),
+          Expanded(child: imageBox(rightImageUrl)),
+        ],
+      );
+    }
+
+    final ar = format.imageAspectWidthOverHeight;
+
+    switch (format) {
+      case KidStorybookPageFormat.portrait:
+        return Column(
+          children: [
+            Expanded(
+              flex: 3,
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: ar,
+                  child: imageBox(rightImageUrl),
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: textWidget,
+            ),
+          ],
+        );
+      case KidStorybookPageFormat.landscape:
+        return Row(
+          children: [
+            Expanded(
+              flex: 4,
+              child: textWidget,
+            ),
+            Expanded(
+              flex: 5,
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: ar,
+                  child: imageBox(rightImageUrl),
+                ),
+              ),
+            ),
+          ],
+        );
+      case KidStorybookPageFormat.square:
+        return Row(
+          children: [
+            Expanded(
+              child: textWidget,
+            ),
+            Expanded(
+              child: Center(
+                child: AspectRatio(
+                  aspectRatio: ar,
+                  child: imageBox(rightImageUrl),
+                ),
+              ),
+            ),
+          ],
+        );
+    }
   }
 
   @override
@@ -449,83 +925,103 @@ class _BuildBookContent extends StatelessWidget {
     final rightImageUrl = spread['right_image_url'] as String?;
     final isLast = currentIndex >= pages.length - 1;
     final canGoBack = currentIndex > 0;
+    final spreadId = spread['id']?.toString() ?? 'idx$currentIndex';
+    // Ny undertræ for hver spredning: undgår iOS/WidgetSpan, hvor
+    // renderObject-unmount for RichText+WidgetSpan kan ramme
+    // assert(dependents.isEmpty) ved genbrug af element efter skift.
+    final spreadSubtreeKey = ValueKey<String>(
+      'reader_spread_${currentIndex}_${spreadId}_${textCase.name}',
+    );
 
-    return Stack(
+    return KeyedSubtree(
+      key: spreadSubtreeKey,
+      child: Stack(
       fit: StackFit.expand,
       children: [
-        if (isCover)
+        if (isCover && kidStoryPageFormat == null)
           rightImageUrl != null && rightImageUrl.isNotEmpty
               ? Positioned.fill(
                   child: Center(
-                    child: Image.network(rightImageUrl!, fit: BoxFit.contain, errorBuilder: (_, __, ___) => _coverPlaceholder()),
+                    child: Image.network(
+                      rightImageUrl,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) =>
+                          _coverPlaceholder(),
+                    ),
                   ),
                 )
               : _coverPlaceholder()
         else
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  color: Colors.white,
-                  padding: const EdgeInsets.all(32),
-                  child: Center(
-                    child: SingleChildScrollView(
-                      child: _buildTappableText(
-                        _applyTextCase(leftText),
-                        const TextStyle(fontSize: 36, height: 1.6, color: Colors.black),
+          (kidStoryPageFormat != null && spread['page_layout'] != null)
+              ? _kidStoryFreeformLayout(spread: spread)
+              : _kidStoryBodyForFormat(
+                  leftText: leftText,
+                  rightImageUrl: rightImageUrl,
+                  format: kidStoryPageFormat,
+                  textBodyFontSize: (spread['text_font_size'] as num?)?.toDouble(),
+                  textFontKey: spread['text_font_key'] as String?,
+                ),
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: Material(
+              color: Colors.white.withValues(alpha: 0.9),
+              shape: const CircleBorder(),
+              clipBehavior: Clip.antiAlias,
+              child: IconButton(
+                icon: Icon(
+                  isLast ? Icons.check_circle : Icons.arrow_forward,
+                  size: 48,
+                  color: Colors.black87,
+                ),
+                tooltip: isLast ? 'Færdig' : 'Næste side',
+                onPressed: onNext,
+                padding: const EdgeInsets.all(12),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 16,
+          child: SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Center(
+                child: Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    if (canGoBack)
+                      FilledButton.tonal(
+                        onPressed: onPrev,
+                        child: const Text('Forrige side', style: TextStyle(fontSize: 16)),
+                      ),
+                    FilledButton.tonal(
+                      onPressed: onCycleTextCase,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      ),
+                      child: Text(
+                        _caseButtonLabel(),
+                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                       ),
                     ),
-                  ),
+                  ],
                 ),
               ),
-              Expanded(
-                child: rightImageUrl != null && rightImageUrl.isNotEmpty
-                    ? Image.network(rightImageUrl, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _placeholder())
-                    : _placeholder(),
-              ),
-            ],
-          ),
-        Positioned(
-          left: 0,
-          top: 0,
-          bottom: 0,
-          child: Center(
-            child: IconButton(
-              icon: const Icon(Icons.arrow_back, size: 48, color: Colors.black),
-              onPressed: canGoBack ? onPrev : (isCover ? onClose : null),
-              style: IconButton.styleFrom(backgroundColor: isCover ? Colors.white.withOpacity(0.9) : Colors.transparent),
-            ),
-          ),
-        ),
-        Positioned(
-          right: 0,
-          top: 0,
-          bottom: 0,
-          child: Center(
-            child: IconButton(
-              icon: Icon(isLast ? Icons.check_circle : Icons.arrow_forward, size: 48, color: Colors.black),
-              onPressed: onNext,
-              style: IconButton.styleFrom(backgroundColor: Colors.white.withOpacity(0.85)),
-            ),
-          ),
-        ),
-        Positioned(
-          left: 0,
-          right: 0,
-          bottom: 24,
-          child: Center(
-            child: TextButton(
-              onPressed: onCycleTextCase,
-              style: TextButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: Colors.black,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              ),
-              child: Text(_caseButtonLabel(), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
             ),
           ),
         ),
       ],
+    ),
     );
   }
 

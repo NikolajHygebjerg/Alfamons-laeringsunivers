@@ -94,7 +94,7 @@ class _AudioTestScreenState extends State<AudioTestScreen> {
           onPressed: () => context.go('/admin'),
         ),
         actions: const [
-          AdminMenuToolbarButton(lightOnDark: false),
+          AdminAppBarMenuAndLogout(lightOnDark: false),
         ],
       ),
       body: SingleChildScrollView(

@@ -4,7 +4,7 @@
 name: alfamon_flutter
 description: "Web admin build — uden barn-assets og uden alfamon_trace."
 publish_to: 'none'
-version: 1.0.6+6
+version: 1.0.7+10
 
 environment:
   sdk: ^3.11.1
@@ -26,7 +26,7 @@ dependencies:
   provider: ^6.1.2
   shared_preferences: ^2.2.2
   flutter_local_notifications: ^18.0.1
-  file_picker: ^8.1.6
+  file_picker: ^10.0.0
   table_calendar: ^3.1.2
   flutter_tts: ^4.2.1
   url_launcher: ^6.3.2

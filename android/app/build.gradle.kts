@@ -16,7 +16,8 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "com.alfamon.alfamon_flutter"
-    compileSdk = flutter.compileSdkVersion
+    // kræves af flutter_plugin_android_lifecycle → file_picker metadata (compile 36+)
+    compileSdk = maxOf(36, flutter.compileSdkVersion)
     ndkVersion = flutter.ndkVersion
 
     defaultConfig {

@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
@@ -8,8 +10,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/kid.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/alfamon_evolution.dart';
+import '../../utils/alfamon_display_name.dart';
 import '../../utils/card_assets.dart';
 import '../../widgets/asset_or_network_image.dart';
+import '../../utils/app_review_prompt.dart';
 import '../../widgets/kid_parent_admin_corner.dart';
 
 class KidSelectScreen extends StatefulWidget {
@@ -72,6 +76,13 @@ class _KidSelectScreenState extends State<KidSelectScreen> {
       _kids = (res as List).map((e) => Kid.fromJson(e)).toList();
       _loading = false;
     });
+    if (mounted && _kids.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(showAppReviewPromptIfEligible(context));
+        }
+      });
+    }
   }
 
   /// Log ud af appen og ryd gemt barn-session.
@@ -340,7 +351,7 @@ class _KidCard extends StatelessWidget {
       }
       if (imageUrl == null || imageUrl.isEmpty) {
         final paths = CardAssets.getCardImagePathsToTry(
-          avMap['name'] as String? ?? 'Alfamon',
+          alfamonDisplayName(avMap['name'] as String? ?? 'Alfamon'),
           stageIdx,
           letter: avMap['letter'] as String?,
         );
@@ -349,7 +360,9 @@ class _KidCard extends StatelessWidget {
       if (imageUrl != null && imageUrl.isNotEmpty) {
         options.add({
           'avatar_id': avatarId,
-          'name': avMap['name'] ?? 'Alfamon',
+          'name': alfamonDisplayName(
+            (avMap['name'] as String?) ?? 'Alfamon',
+          ),
           'image_url': imageUrl,
           'stage_index': stageIdx,
         });

@@ -146,7 +146,7 @@ class CardAssets {
       base = _letterToAssetBase[first];
     }
 
-    final rawPath = base == null ? null : 'assets/${base}$stage.svg';
+    final rawPath = base == null ? null : 'assets/$base$stage.svg';
     final path = rawPath == null ? null : (_pathOverrides[rawPath] ?? rawPath);
     developer.log(
       'name=$avatarName letter=$letter stageIndex=$stageIndex -> base=$base path=$path',
@@ -163,5 +163,40 @@ class CardAssets {
     if (svgPath == null) return [];
     final basePath = svgPath.replaceAll('.svg', '');
     return ['$basePath.webp', '$basePath.png', '$basePath.jpg', svgPath];
+  }
+
+  /// Navn efter mønster i [assets/alfamons_bundles/trace/] (fx `Atiach1.png` → "Atiach",
+  /// `Xbug1` fra [X-bugkort]).
+  static String? kortBaseToTraceFilePrefix(String kortBase) {
+    switch (kortBase) {
+      case 'X-bugkort':
+        return 'Xbug';
+      case 'Kåvaxkort':
+        return 'Kaavax';
+      case 'Quibblykort':
+        return 'Quibly';
+    }
+    if (kortBase.length > 4 && kortBase.endsWith('kort')) {
+      return kortBase.substring(0, kortBase.length - 4);
+    }
+    return null;
+  }
+
+  /// Stump brugt i [assets/alfamons_bundles/trace/] for denne Alfamon (før 1, 2, … i filnavn).
+  static String? traceFilePrefixFor(String avatarName, {String? letter}) {
+    String? base;
+    if (letter != null && letter.isNotEmpty) {
+      base = _letterToAssetBase[letter.toLowerCase().trim()];
+    }
+    if (base == null) {
+      final nameKey = avatarName.toLowerCase().trim();
+      base = _nameToAssetBase[nameKey];
+    }
+    if (base == null && avatarName.isNotEmpty) {
+      final first = avatarName.toLowerCase().trim()[0];
+      base = _letterToAssetBase[first];
+    }
+    if (base == null) return null;
+    return kortBaseToTraceFilePrefix(base);
   }
 }

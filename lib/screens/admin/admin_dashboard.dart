@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../providers/profile_role_provider.dart';
+import '../../services/book_builder_gallery_service.dart';
 import '../../widgets/parent_code_first_setup_dialog.dart';
 import '../../widgets/admin/admin_menu_toolbar_button.dart';
 import '../../widgets/tts_setup_intro_dialog.dart';
@@ -30,6 +32,10 @@ class _AdminDashboardState extends State<AdminDashboard> {
   Widget build(BuildContext context) {
     final canAccessBookBuilder =
         context.watch<ProfileRoleProvider>().isAdmin;
+    final email =
+        Supabase.instance.client.auth.currentUser?.email?.trim() ?? '';
+    final isBookBuilderBilledBank =
+        canAccessBookBuilder && email == BookBuilderGalleryService.kAdminEmail;
 
     return Scaffold(
       appBar: AppBar(
@@ -37,7 +43,7 @@ class _AdminDashboardState extends State<AdminDashboard> {
         backgroundColor: const Color(0xFF5A1A0D),
         foregroundColor: Colors.white,
         actions: const [
-          AdminMenuToolbarButton(),
+          AdminAppBarMenuAndLogout(),
         ],
       ),
       body: Container(
@@ -81,6 +87,13 @@ class _AdminDashboardState extends State<AdminDashboard> {
                 title: 'Bogbuilder',
                 subtitle: 'Byg Læs-let bøger til bogbutikken',
                 onTap: () => context.push('/admin/book-builder'),
+              ),
+            if (isBookBuilderBilledBank)
+              _AdminTile(
+                icon: Icons.photo_library,
+                title: 'Bogbygger – billedbank',
+                subtitle: 'Tilknyt app-bundne billeder til Alfamon og upload nye',
+                onTap: () => context.push('/admin/book-builder/bogbilleder'),
               ),
             _AdminTile(
               icon: Icons.settings,

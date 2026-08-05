@@ -1,3 +1,5 @@
+import '../utils/alfamon_display_name.dart';
+
 class Avatar {
   final String id;
   final String name;
@@ -14,7 +16,7 @@ class Avatar {
   factory Avatar.fromJson(Map<String, dynamic> json) {
     return Avatar(
       id: json['id'] as String,
-      name: json['name'] as String,
+      name: alfamonDisplayName(json['name'] as String),
       letter: json['letter'] as String?,
       pointsPerStage: json['points_per_stage'] as Map<String, dynamic>?,
     );

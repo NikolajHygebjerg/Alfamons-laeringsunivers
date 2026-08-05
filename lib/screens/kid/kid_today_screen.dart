@@ -72,6 +72,11 @@ class _KidTodayScreenState extends State<KidTodayScreen> {
     if (mounted) await _refreshAfterKidRoute();
   }
 
+  Future<void> _openStorybookBuilder() async {
+    await context.push('/kid/storybook/${widget.kidId}');
+    if (mounted) await _refreshAfterKidRoute();
+  }
+
   Future<void> _openTrace() async {
     final container = ProviderScope.containerOf(context);
     // Gem evt. guldmønter fra sidste gang (fx ved netværksfejl), så de ikke nulstilles.
@@ -332,6 +337,35 @@ class _KidTodayScreenState extends State<KidTodayScreen> {
                   if (mounted) await _refreshAfterKidRoute();
                 },
                 child: const SizedBox.expand(),
+              ),
+            ),
+          ),
+          _region(
+            KidTodayHitRegions.storybook,
+            size,
+            Semantics(
+              button: true,
+              label: 'Bogbygger',
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  splashColor: Colors.white24,
+                  highlightColor: Colors.white10,
+                  onTap: () => unawaited(_openStorybookBuilder()),
+                  child: Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: Image.asset(
+                      'assets/bogbygger.png',
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.medium,
+                      errorBuilder: (_, _, _) => const Icon(
+                        Icons.auto_stories_rounded,
+                        color: Color(0xFFF9C433),
+                        size: 56,
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),

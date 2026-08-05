@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../utils/alfamon_display_name.dart';
 import '../../utils/angreb_assets.dart';
 import '../../utils/card_assets.dart';
 import '../../widgets/duel_angreb_tile.dart';
@@ -343,7 +344,9 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
       final avatarId = row['avatar_id'] as String;
       final stageIndex = row['current_stage_index'] as int;
       final av = row['avatars'];
-      final name = (av is Map ? av['name'] : null) as String? ?? 'Alfamon';
+      final name = alfamonDisplayName(
+        (av is Map ? av['name'] : null) as String? ?? 'Alfamon',
+      );
       final letter = (av is Map ? av['letter'] : null) as String?;
 
       final stageRes = await client
@@ -398,7 +401,9 @@ class _KidSpilScreenState extends State<KidSpilScreen> {
       if (cards.any((c) => c.avatarId == avatarId)) continue;
 
       final av = row['avatars'];
-      final name = (av is Map ? av['name'] : null) as String? ?? 'Alfamon';
+      final name = alfamonDisplayName(
+        (av is Map ? av['name'] : null) as String? ?? 'Alfamon',
+      );
       final letter = (av is Map ? av['letter'] : null) as String?;
 
       final stageRes = await client

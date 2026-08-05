@@ -359,7 +359,7 @@ class _AdminSettingsScreenState extends State<AdminSettingsScreen> {
         title: const Text('Indstillinger'),
         backgroundColor: const Color(0xFF5A1A0D),
         foregroundColor: Colors.white,
-        actions: const [AdminMenuToolbarButton()],
+        actions: const [AdminAppBarMenuAndLogout()],
       ),
       body: Stack(
         children: [

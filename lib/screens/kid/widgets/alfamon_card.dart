@@ -1,9 +1,10 @@
-import 'dart:convert';
 import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+
+import '../../../utils/flutter_asset_key_cache.dart';
 
 /// Styrke-farver matchende kortdesignet (POWER, SPEED, MIND, MAGIC, ARMOR, CHARM)
 const strengthColors = [
@@ -53,6 +54,7 @@ const _alfamonTypes = {
   'x-bug': 'Powermon',
   'yalfax': 'Cutimon',
   'zebra': 'Powermon',
+  'zetbra': 'Powermon',
   'aelgor': 'Fleximon',
   'armok': 'Powermon',
   // Variant-stavninger fra appen
@@ -134,14 +136,9 @@ class _CardImageState extends State<_CardImage> {
     if (_assetLookupByCanonical != null) return;
     _assetLookupInit ??= () async {
       try {
-        final manifestRaw = await rootBundle.loadString('AssetManifest.json');
-        final decoded = json.decode(manifestRaw);
-        if (decoded is! Map<String, dynamic>) {
-          _assetLookupByCanonical = {};
-          return;
-        }
+        final all = await FlutterAssetKeyCache.allKeys();
         final map = <String, String>{};
-        for (final key in decoded.keys) {
+        for (final key in all) {
           if (!key.startsWith('assets/')) continue;
           final canonical = _canonicalizePath(key);
           map.putIfAbsent(canonical, () => key);

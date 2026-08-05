@@ -334,7 +334,7 @@ class _AdminTasksScreenState extends State<AdminTasksScreen> {
         title: const Text('Opgaver'),
         backgroundColor: const Color(0xFF5A1A0D),
         foregroundColor: Colors.white,
-        actions: const [AdminMenuToolbarButton()],
+        actions: const [AdminAppBarMenuAndLogout()],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

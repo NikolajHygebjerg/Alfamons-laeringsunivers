@@ -27,6 +27,7 @@ import 'screens/kid/kid_select_screen.dart';
 import 'screens/kid/kid_spil_mode_screen.dart';
 import 'screens/kid/kid_spil_pvp_screen.dart';
 import 'screens/kid/kid_spil_screen.dart';
+import 'screens/kid/kid_storybook_builder_screen.dart';
 import 'screens/kid/kid_spil_ven_screen.dart';
 import 'screens/kid/kid_tasks_screen.dart';
 import 'screens/kid/kid_today_screen.dart';
@@ -269,6 +270,17 @@ GoRouter _router(AuthProvider authProvider) => GoRouter(
               builder: (context, state) {
                 final kidId = state.pathParameters['kidId']!;
                 return KidAlfamonsScreen(kidId: kidId);
+              },
+            ),
+            GoRoute(
+              path: '/kid/storybook/:kidId',
+              builder: (context, state) {
+                final kidId = state.pathParameters['kidId']!;
+                final book = state.uri.queryParameters['book'];
+                return KidStorybookBuilderScreen(
+                  kidId: kidId,
+                  existingBookId: book,
+                );
               },
             ),
             GoRoute(

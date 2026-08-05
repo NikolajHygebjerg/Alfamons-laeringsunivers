@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../config/supabase_config.dart';
+import '../../utils/auth_error_messages.dart';
 
 class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
@@ -81,7 +82,7 @@ class _AuthScreenState extends State<AuthScreen> {
       });
     } catch (e) {
       setState(() {
-        _errorMessage = e.toString();
+        _errorMessage = authUnknownErrorMessage(e);
         _isLoading = false;
       });
     }
@@ -110,6 +111,10 @@ class _AuthScreenState extends State<AuthScreen> {
     } on AuthException catch (e) {
       setState(() {
         _errorMessage = e.message;
+      });
+    } catch (e) {
+      setState(() {
+        _errorMessage = authUnknownErrorMessage(e);
       });
     }
     setState(() => _isLoading = false);

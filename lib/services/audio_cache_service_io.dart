@@ -34,6 +34,18 @@ class AudioCacheService {
     return await file.exists() ? file.path : null;
   }
 
+  /// Sletter cachen for en URL, så næste [ensureCached] henter igen (fx efter overskrevet fil i storage).
+  static Future<void> invalidateCachedUrl(String url) async {
+    final p = await getCachedPath(url);
+    if (p == null) return;
+    try {
+      final f = File(p);
+      if (await f.exists()) {
+        await f.delete();
+      }
+    } catch (_) {}
+  }
+
   /// Henter fil fra URL og gemmer i cache. Returnerer lokal sti.
   static Future<String> ensureCached(String url) async {
     final cached = await getCachedPath(url);

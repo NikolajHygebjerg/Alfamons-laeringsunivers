@@ -1,0 +1,5 @@
+# Efter ./tool/sync_alfamon_trace_illustrations.sh kan mange MB lande her.
+# Behold mappen i git, men ignorér kopierede medier (fjern denne fil hvis I vil versionere alt).
+*
+!.gitignore
+!.gitkeep

@@ -1,4 +1,7 @@
 # Miscellaneous
+# Release-keystore med passwords — ikke commit
+Release key/
+
 .venv/
 *.class
 *.log
@@ -43,6 +46,11 @@ app.*.map.json
 # Supabase API key - aldrig commit
 lib/config/supabase_config_local.dart
 
+# Android signing (aldrig commit keystore/passwords — se android/key.properties.example)
+/android/key.properties
+**/*.jks
+**/*.keystore
+
 # Android Studio will place build artifacts here
 /android/app/debug
 /android/app/profile
@@ -50,6 +58,7 @@ lib/config/supabase_config_local.dart
 
 # Xcode – ikke commit lokale brugerindstillinger
 **/xcuserdata/
+ios/build/
 
 # Supabase CLI midlertidige filer
 supabase/.temp/

@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../services/alfamon_evolution.dart';
 import '../../services/task_completion_service.dart';
+import '../../utils/alfamon_display_name.dart';
 import '../../utils/card_assets.dart';
 import '../../widgets/asset_or_network_image.dart';
 import '../../widgets/kid_parent_admin_corner.dart';
@@ -178,7 +179,7 @@ class _KidAlfamonsScreenState extends State<KidAlfamonsScreen> {
       var imageUrl = stageMap[avatarId]?[stageIdx];
       if (imageUrl == null || imageUrl.isEmpty) {
         final paths = CardAssets.getCardImagePathsToTry(
-          avMap['name'] as String? ?? 'Alfamon',
+          alfamonDisplayName(avMap['name'] as String? ?? 'Alfamon'),
           stageIdx,
           letter: avMap['letter'] as String?,
         );
@@ -187,7 +188,7 @@ class _KidAlfamonsScreenState extends State<KidAlfamonsScreen> {
       alphamons[letter] = _UnlockedAlphamon(
         avatarId: avatarId,
         letter: letter,
-        name: avMap['name'] as String? ?? 'Alfamon',
+        name: alfamonDisplayName(avMap['name'] as String? ?? 'Alfamon'),
         imageUrl: imageUrl != null && imageUrl.isNotEmpty ? imageUrl : null,
         currentStage: stageIdx,
         maxStage: maxStage,

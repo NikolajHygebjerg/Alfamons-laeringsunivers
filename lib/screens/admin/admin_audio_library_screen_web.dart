@@ -16,7 +16,7 @@ class AdminAudioLibraryScreen extends StatelessWidget {
           onPressed: () => context.go('/admin/book-builder'),
         ),
         actions: const [
-          AdminMenuToolbarButton(lightOnDark: false),
+          AdminAppBarMenuAndLogout(lightOnDark: false),
         ],
       ),
       body: const Center(

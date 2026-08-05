@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../utils/alfamon_display_name.dart';
 import '../../widgets/admin/admin_menu_toolbar_button.dart';
 
 class AdminAvatarsScreen extends StatelessWidget {
@@ -12,7 +13,7 @@ class AdminAvatarsScreen extends StatelessWidget {
         title: const Text('Avatars'),
         backgroundColor: const Color(0xFF5A1A0D),
         foregroundColor: Colors.white,
-        actions: const [AdminMenuToolbarButton()],
+        actions: const [AdminAppBarMenuAndLogout()],
       ),
       body: FutureBuilder(
         future: Supabase.instance.client
@@ -37,7 +38,7 @@ class AdminAvatarsScreen extends StatelessWidget {
               return Card(
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
-                  title: Text(a['name'] as String? ?? ''),
+                  title: Text(alfamonDisplayName(a['name'] as String?)),
                   subtitle: a['letter'] != null
                       ? Text('Bogstav: ${a['letter']}')
                       : null,

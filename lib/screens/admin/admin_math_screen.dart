@@ -526,7 +526,7 @@ class _AdminMathScreenState extends State<AdminMathScreen> {
         appBar: AppBar(
           title: Text(_folderTitle()),
           actions: const [
-            AdminMenuToolbarButton(lightOnDark: false),
+            AdminAppBarMenuAndLogout(lightOnDark: false),
           ],
         ),
         body: const Center(child: CircularProgressIndicator()),
@@ -537,7 +537,7 @@ class _AdminMathScreenState extends State<AdminMathScreen> {
         appBar: AppBar(
           title: const Text('Matematik'),
           actions: const [
-            AdminMenuToolbarButton(lightOnDark: false),
+            AdminAppBarMenuAndLogout(lightOnDark: false),
           ],
         ),
         body: Padding(
@@ -566,7 +566,7 @@ class _AdminMathScreenState extends State<AdminMathScreen> {
         appBar: AppBar(
           title: const Text('Matematik'),
           actions: const [
-            AdminMenuToolbarButton(lightOnDark: false),
+            AdminAppBarMenuAndLogout(lightOnDark: false),
           ],
         ),
         body: const Center(child: Text('Ikke logget ind')),
@@ -578,7 +578,7 @@ class _AdminMathScreenState extends State<AdminMathScreen> {
         title: Text(_folderTitle()),
         backgroundColor: const Color(0xFF5A1A0D),
         foregroundColor: Colors.white,
-        actions: const [AdminMenuToolbarButton()],
+        actions: const [AdminAppBarMenuAndLogout()],
       ),
       body: RefreshIndicator(
         onRefresh: _load,

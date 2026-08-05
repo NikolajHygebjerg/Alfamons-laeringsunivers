@@ -11,6 +11,8 @@ class AudioCacheService {
 
   static Future<String> ensureCached(String url) async => url;
 
+  static Future<void> invalidateCachedUrl(String url) async {}
+
   static Future<void> syncAll() async {
     final prefs = await SharedPreferences.getInstance();
     try {

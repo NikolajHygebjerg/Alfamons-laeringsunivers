@@ -346,7 +346,7 @@ class _AdminBookEditorScreenState extends State<AdminBookEditorScreen> {
             icon: const Icon(Icons.arrow_back),
             onPressed: () => context.go('/admin/book-builder'),
           ),
-          actions: const [AdminMenuToolbarButton()],
+          actions: const [AdminAppBarMenuAndLogout()],
         ),
         body: const Center(child: CircularProgressIndicator()),
       );
@@ -362,7 +362,7 @@ class _AdminBookEditorScreenState extends State<AdminBookEditorScreen> {
             icon: const Icon(Icons.arrow_back),
             onPressed: () => context.go('/admin/book-builder'),
           ),
-          actions: const [AdminMenuToolbarButton()],
+          actions: const [AdminAppBarMenuAndLogout()],
         ),
         body: Center(
           child: Padding(
@@ -414,7 +414,7 @@ class _AdminBookEditorScreenState extends State<AdminBookEditorScreen> {
               icon: const Icon(Icons.save, color: Colors.white, size: 20),
               label: const Text('Gem', style: TextStyle(color: Colors.white)),
             ),
-          const AdminMenuToolbarButton(),
+          const AdminAppBarMenuAndLogout(),
         ],
       ),
       body: Container(
