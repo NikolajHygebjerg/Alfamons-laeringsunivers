@@ -1,0 +1,50 @@
+Windows-udgivelse til egen hjemmeside – Alfamons læringsunivers
+===============================================
+
+1) Byg-maskine
+   - Windows 10/11, 64-bit
+   - Flutter SDK (stable), på PATH
+   - Visual Studio 2022 med workload "Desktop development with C++"
+
+2) Supabase-nøgle (én af disse)
+   a) Kopiér lib/config/supabase_config_local_example.dart til
+      lib/config/supabase_config_local.dart og indsæt anon key
+   b) Eller brug dart-define ved build (se tool/build_windows.ps1)
+
+3) Byg og zip
+   Åbn PowerShell i repo-roden:
+   powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1 -Package
+
+   Output:
+   - dist\windows\Alfamons-Windows-<version>\   (mappe med .exe + data + dll)
+   - dist\windows\Alfamons-Windows-<version>.zip
+
+   Uden egen Windows-PC: GitHub → Actions → "Windows build" → Run workflow
+   (kræver secret SUPABASE_ANON_KEY). Download artifact "Alfamons-Windows".
+
+4) Hjemmeside
+   - Læg .zip et sted brugere kan downloade (HTTPS anbefales).
+   - Kort tekst til brugere: "Udpak zip til en mappe, dobbeltklik Alfamons.exe."
+   - Hele indholdet af mappen skal med – ikke kun .exe.
+
+5) Afhængigheder på kundens PC
+   - De fleste Windows 10/11 har allerede Visual C++ runtime.
+   - Hvis appen ikke starter, kan de installere "Microsoft Visual C++ Redistributable"
+     (x64) fra Microsoft.
+
+6) Signering (valgfrit)
+   - Uden kodesignering viser SmartScreen evt. advarsel ved første kørsel.
+   - For færre advarsler: signér Alfamons.exe med et Authenticode-certifikat.
+
+7) Version
+   - Sæt version i pubspec.yaml under "version: …" før du laver udgivelses-build.
+   - Zip-navnet følger den version.
+
+8) Kendte begrænsninger
+   - just_audio (boglæser, matematik-tutor m.m.) virker typisk ikke på Windows.
+   - Se docs/flutter-windows-build.md for fuld liste.
+
+9) CMake-fejl
+   - Slet build/windows og kør: flutter clean && flutter pub get
+     && flutter build windows --release
+   - CMake-target hedder alfamon_flutter; OUTPUT_NAME giver Alfamons.exe.

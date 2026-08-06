@@ -1,0 +1,71 @@
+# Bygger Windows desktop-app (.exe) og uploader zip som artifact.
+# Kræver GitHub secret SUPABASE_ANON_KEY (Supabase Dashboard → API → anon public).
+name: Windows build
+
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+    branches: [main, release]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        run: flutter pub get
+
+      - name: Build Windows release
+        env:
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          if (-not $env:SUPABASE_ANON_KEY) {
+            Write-Error "Manglende GitHub secret SUPABASE_ANON_KEY. Tilføj den under repo Settings → Secrets → Actions."
+          }
+          flutter build windows --release `
+            --dart-define=SUPABASE_URL=https://bdsnfnwcnfnszgdqbapo.supabase.co `
+            --dart-define=SUPABASE_ANON_KEY=$env:SUPABASE_ANON_KEY
+
+      - name: Package zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $outDir = "build\windows\x64\runner\Release"
+          $exe = Join-Path $outDir "Alfamons.exe"
+          if (-not (Test-Path $exe)) {
+            $exe = Join-Path $outDir "alfamon_flutter.exe"
+          }
+          if (-not (Test-Path $exe)) {
+            throw "Ingen exe fundet i $outDir"
+          }
+
+          $versionLine = Select-String -Path pubspec.yaml -Pattern '^\s*version:\s*(\S+)' | Select-Object -First 1
+          $version = $versionLine.Matches.Groups[1].Value -replace '\+', '-'
+          $folderName = "Alfamons-Windows-$version"
+          $distDir = "dist\windows\$folderName"
+          New-Item -ItemType Directory -Force -Path $distDir | Out-Null
+          Copy-Item -Path "$outDir\*" -Destination $distDir -Recurse -Force
+
+          $zipPath = "dist\windows\$folderName.zip"
+          if (Test-Path $zipPath) { Remove-Item $zipPath }
+          Compress-Archive -Path $distDir -DestinationPath $zipPath -CompressionLevel Optimal
+          Write-Host "Pakke: $zipPath"
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alfamons-Windows
+          path: dist/windows/*.zip
+          if-no-files-found: error
+          retention-days: 30

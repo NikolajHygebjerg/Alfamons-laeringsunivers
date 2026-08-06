@@ -62,6 +62,22 @@ Til rigtig release skal `android/app/build.gradle.kts` have **release signing** 
 
 ---
 
-## 5. Supabase
+## 5. Windows (desktop)
+
+**På Windows-PC:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1 -Package
+```
+
+Upload `dist\windows\Alfamons-Windows-<version>.zip` til hjemmesiden. Se også `scripts/windows_udgivelse_til_hjemmeside.txt`.
+
+**Uden Windows-PC:** GitHub → Actions → **Windows build** → Run workflow (kræver secret `SUPABASE_ANON_KEY`). Download artifact `Alfamons-Windows`.
+
+Fuld guide: [docs/flutter-windows-build.md](flutter-windows-build.md).
+
+---
+
+## 6. Supabase
 
 Migrationer i `supabase/migrations/` skal køres mod **produktionsprojektet** (Supabase Dashboard → SQL eller `supabase db push` mod linket prod-projekt).

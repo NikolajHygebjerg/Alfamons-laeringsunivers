@@ -37,6 +37,9 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Windows release zip (tool/build_windows.ps1 -Package)
+/dist/
+
 # Symbolication related
 app.*.symbols
 

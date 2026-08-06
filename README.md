@@ -49,4 +49,4 @@ lib/
 - Android
 - Web
 - macOS
-- Windows (desktop — se [docs/flutter-windows-build.md](docs/flutter-windows-build.md); bygges kun på Windows-PC)
+- **Windows** — se [docs/flutter-windows-build.md](docs/flutter-windows-build.md). Bygges på Windows-PC eller via GitHub Actions (artifact `Alfamons-Windows`).

@@ -1,8 +1,8 @@
-# Guide: Byg Alfamons lektiehelte til Windows
+# Guide: Byg Alfamons læringsunivers til Windows
 
-Denne guide beskriver, hvordan du bygger og kører Flutter-appen som **Windows desktop-app** (.exe).
+Denne guide beskriver, hvordan du bygger og kører Flutter-appen som **Windows desktop-app** (`Alfamons.exe`).
 
-> **Mac/Linux:** `flutter build windows` virker **kun på en Windows-maskine**. På Mac får du fejlen *"build windows only supported on Windows hosts"* — det er forventet.
+> **Mac/Linux:** `flutter build windows` virker **kun på en Windows-maskine**. På Mac får du fejlen *"build windows only supported on Windows hosts"* — det er forventet. Brug i stedet [GitHub Actions](#8-byg-via-github-actions-uden-windows-pc) (se nedenfor).
 
 ---
 
@@ -55,9 +55,9 @@ Eller kopier projektmappen fra Mac (USB, OneDrive, zip osv.).
 
 ### Supabase-nøgle
 
-Appen læser anon key fra `lib/config/supabase_config_local.dart` (samme som iOS/Android).
+**Lokal udvikling:** Kopiér `lib/config/supabase_config_local_example.dart` til `lib/config/supabase_config_local.dart` og indsæt din anon key (samme som iOS/Android).
 
-Alternativt kan du bygge med dart-define:
+**CI / release-build:** Brug dart-define (har forrang over den lokale fil):
 
 ```powershell
 flutter build windows --release `
@@ -69,13 +69,15 @@ flutter build windows --release `
 
 ## 3. Byg (release)
 
-### Hurtig metode — script
+### Hurtig metode — script (anbefalet)
 
 Fra projektroden i **PowerShell**:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1
+powershell -ExecutionPolicy Bypass -File tool\build_windows.ps1 -Package
 ```
+
+Det bygger release og laver `dist\windows\Alfamons-Windows-<version>.zip`.
 
 Debug-build:
 
@@ -100,7 +102,7 @@ Efter release-build ligger output her:
 
 ```
 build\windows\x64\runner\Release\
-├── alfamon_flutter.exe      ← start filen
+├── Alfamons.exe             ← start filen
 ├── flutter_windows.dll
 ├── *.dll                    ← plugin-biblioteker
 └── data\
@@ -110,10 +112,10 @@ build\windows\x64\runner\Release\
 **Kør:**
 
 ```powershell
-.\build\windows\x64\runner\Release\alfamon_flutter.exe
+.\build\windows\x64\runner\Release\Alfamons.exe
 ```
 
-Eller dobbeltklik på `alfamon_flutter.exe` i Stifinder.
+Eller dobbeltklik på `Alfamons.exe` i Stifinder.
 
 ### Udvikling (hot reload)
 
@@ -127,13 +129,12 @@ flutter run -d windows
 
 ## 5. Del appen med andre (zip)
 
-Windows-appen er **ikke** én enkelt fil. Du skal pakke **hele** `Release`-mappen:
+Windows-appen er **ikke** én enkelt fil. Du skal pakke **hele** `Release`-mappen (eller bruge `-Package` i build-scriptet):
 
-1. Højreklik på `build\windows\x64\runner\Release`
-2. **Send til → Komprimeret mappe**
-3. Send zip-filen
+1. Kør `tool\build_windows.ps1 -Package`, **eller**
+2. Højreklik på `build\windows\x64\runner\Release` → **Send til → Komprimeret mappe**
 
-Modtageren udpakker og kører `alfamon_flutter.exe`.
+Modtageren udpakker og kører `Alfamons.exe`.
 
 > **SmartScreen:** Uden code signing viser Windows muligvis en advarsel ved første kørsel. Klik "Mere info" → "Kør alligevel", eller underskriv exe'en senere med et certifikat.
 
@@ -195,22 +196,22 @@ Kør fra PowerShell for at se fejl:
 
 ```powershell
 cd build\windows\x64\runner\Release
-.\alfamon_flutter.exe
+.\Alfamons.exe
 ```
 
 Tjek også `%LOCALAPPDATA%\alfamon_flutter\` for logs, hvis relevant.
 
 ---
 
-## 8. Valgfrit: Byg via GitHub Actions (uden Windows-PC)
+## 8. Byg via GitHub Actions (uden Windows-PC)
 
-Hvis du ikke har adgang til Windows, kan du tilføje en workflow der bygger på `windows-latest` og uploader `Release`-mappen som artifact. Det kræver push til GitHub og ca. 10–20 min per build.
+Repoet har workflow **Windows build** (`.github/workflows/windows-build.yml`).
 
-Eksempel-trin (manuelt i repo):
+1. Tilføj GitHub secret `SUPABASE_ANON_KEY` (Settings → Secrets and variables → Actions).
+2. Gå til **Actions** → **Windows build** → **Run workflow** (eller push til `main` / `release`).
+3. Når build er færdigt: download artifact **Alfamons-Windows** (zip med hele Release-mappen).
 
-1. Opret `.github/workflows/windows-build.yml`
-2. Trigger workflow fra Actions-fanen
-3. Download artifact (zip med Release-mappen)
+Build tager typisk 10–20 minutter.
 
 ---
 
@@ -229,7 +230,9 @@ Eksempel-trin (manuelt i repo):
 
 | Fil | Formål |
 |-----|--------|
-| `tool/build_windows.ps1` | Automatiseret Windows-build |
+| `tool/build_windows.ps1` | Automatiseret Windows-build og zip (`-Package`) |
+| `scripts/windows_udgivelse_til_hjemmeside.txt` | Kort checkliste til hjemmeside-upload |
+| `.github/workflows/windows-build.yml` | CI-build uden Windows-PC |
 | `windows/` | Flutter desktop-runner (CMake) |
 | `pubspec.yaml` | Fuld app inkl. assets (~180 MB+) |
 | `pubspec_web.yaml` | Kun web-admin (bruges **ikke** til Windows) |
