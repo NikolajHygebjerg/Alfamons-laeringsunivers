@@ -180,7 +180,13 @@ flutter pub get
 flutter build windows --release
 ```
 
-### `LNK1104` eller manglende DLL ved kørsel
+### `STL1011` / `experimental\coroutine` (Visual Studio 2026)
+
+Nyere MSVC gør deprecated coroutine-headers til hard error i `audioplayers_windows`.
+`windows/CMakeLists.txt` indeholder `_SILENCE_EXPERIMENTAL_COROUTINE_DEPRECATION_WARNINGS`.
+Hvis du stadig ser fejlen: `git pull` og byg igen efter `flutter clean`.
+
+### `nuget.exe not found`
 
 Kør exe'en **fra** `Release`-mappen, eller kopier hele mappen — ikke kun `.exe`.
 
